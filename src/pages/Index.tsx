@@ -1,5 +1,6 @@
 
 import { useState } from 'react';
+import { useToast } from "@/components/ui/use-toast";
 import Header from '@/components/Header';
 import UploadSection from '@/components/UploadSection';
 import AudioPlayer from '@/components/AudioPlayer';
@@ -7,6 +8,7 @@ import TablaturePreview from '@/components/TablaturePreview';
 import PaymentCard from '@/components/PaymentCard';
 import Footer from '@/components/Footer';
 import { generateTablature } from '@/lib/tablature';
+import { saveTablature } from '@/lib/supabase';
 import { ArrowDown, FileAudio, FileVideo, Music, BarChart, Zap } from 'lucide-react';
 
 const Index = () => {
@@ -14,20 +16,51 @@ const Index = () => {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [tablature, setTablature] = useState(null);
   const [processingComplete, setProcessingComplete] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const { toast } = useToast();
   
-  const handleFileSelected = (file: File) => {
+  const handleFileSelected = async (file: File) => {
     setSelectedFile(file);
+    setIsProcessing(true);
     
     // Create a URL for the file for preview
     const url = URL.createObjectURL(file);
     setFileUrl(url);
     
-    // Simulate processing
-    setTimeout(() => {
-      const generatedTab = generateTablature(file.name);
-      setTablature(generatedTab);
-      setProcessingComplete(true);
-    }, 2500);
+    try {
+      // Simulate processing
+      setTimeout(async () => {
+        const generatedTab = generateTablature(file.name);
+        
+        // Save to Supabase (mock function for now)
+        try {
+          await saveTablature(generatedTab);
+          toast({
+            title: "Tablature generated successfully!",
+            description: "Your tablature is ready to view and download.",
+          });
+        } catch (error) {
+          console.error("Error saving tablature:", error);
+          toast({
+            title: "Error saving tablature",
+            description: "There was an error saving your tablature. Please try again.",
+            variant: "destructive",
+          });
+        }
+        
+        setTablature(generatedTab);
+        setProcessingComplete(true);
+        setIsProcessing(false);
+      }, 2500);
+    } catch (error) {
+      console.error("Error processing file:", error);
+      toast({
+        title: "Error processing file",
+        description: "There was an error processing your file. Please try again.",
+        variant: "destructive",
+      });
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -64,6 +97,21 @@ const Index = () => {
             </div>
             
             <UploadSection onFileSelected={handleFileSelected} />
+            
+            {isProcessing && (
+              <div className="text-center mt-6">
+                <div className="inline-flex items-center px-4 py-2 bg-tabgenius-100 text-tabgenius-800 rounded-full">
+                  <div className="flex space-x-1 mr-2">
+                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave1"></div>
+                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave2"></div>
+                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave3"></div>
+                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave4"></div>
+                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave5"></div>
+                  </div>
+                  <span>Processing your music...</span>
+                </div>
+              </div>
+            )}
           </div>
         </section>
         

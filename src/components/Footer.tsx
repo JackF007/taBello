@@ -1,3 +1,4 @@
+
 import { Music, Github, Twitter, Instagram } from 'lucide-react';
 
 const Footer = () => {

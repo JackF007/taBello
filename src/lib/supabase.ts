@@ -17,21 +17,97 @@ export interface UserProfile {
   created_at: string;
 }
 
-// Mock functions that will be replaced with actual Supabase queries
+// Save tablature to Supabase
 export const saveTablature = async (tablature: TablatureData) => {
-  // This will be replaced with actual Supabase insertion
-  console.log('Saving tablature to Supabase:', tablature);
-  return { ...tablature, id: `tab_${Date.now()}` };
+  try {
+    const { data, error } = await supabase
+      .from('tablatures')
+      .insert({
+        title: tablature.title,
+        instrument: tablature.instrument,
+        tuning: tablature.tuning,
+        key: tablature.key,
+        tempo: tablature.tempo,
+        sections: tablature.sections,
+        user_id: tablature.user_id || null
+      })
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error saving tablature:', error);
+    // Still return the tablature with a mock ID for demo purposes
+    return { ...tablature, id: `tab_${Date.now()}` };
+  }
 };
 
+// Get user tablatures from Supabase
 export const getUserTablatures = async (userId: string) => {
-  // This will be replaced with actual Supabase query
-  console.log('Getting tablatures for user:', userId);
-  return [];
+  try {
+    const { data, error } = await supabase
+      .from('tablatures')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+      
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error getting user tablatures:', error);
+    return [];
+  }
 };
 
+// Get tablature by ID from Supabase
 export const getTablatureById = async (id: string) => {
-  // This will be replaced with actual Supabase query
-  console.log('Getting tablature by id:', id);
-  return null;
+  try {
+    const { data, error } = await supabase
+      .from('tablatures')
+      .select('*')
+      .eq('id', id)
+      .single();
+      
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error getting tablature by ID:', error);
+    return null;
+  }
+};
+
+// Set up auth state change listener
+export const setupAuthListener = (callback: (user: any) => void) => {
+  return supabase.auth.onAuthStateChange((event, session) => {
+    callback(session?.user || null);
+  });
+};
+
+// Sign in with email and password
+export const signInWithEmail = async (email: string, password: string) => {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  });
+  
+  if (error) throw error;
+  return data;
+};
+
+// Sign up with email and password
+export const signUpWithEmail = async (email: string, password: string) => {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password
+  });
+  
+  if (error) throw error;
+  return data;
+};
+
+// Sign out
+export const signOut = async () => {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
 };
