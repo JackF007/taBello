@@ -25,7 +25,7 @@ const Header = () => {
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <Music className="h-8 w-8 text-tabgenius-700" />
-          <span className="font-semibold text-xl tracking-tight">TabGenius</span>
+          <span className="font-semibold text-xl tracking-tight">TaBello</span>
         </div>
         
         <nav className="hidden md:flex space-x-8">
