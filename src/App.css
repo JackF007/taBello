@@ -43,3 +43,23 @@
 .animate-wave5 {
   animation: wave 1.2s ease-in-out infinite 0.4s;
 }
+
+/* Fix for white screen in preview */
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.text-tabello-700 {
+  color: hsl(var(--primary));
+}
+
+.bg-tabello-700 {
+  background-color: hsl(var(--primary));
+}
+
+/* Ensure proper contrast in all color modes */
+.text-white {
+  color: white !important;
+}
+

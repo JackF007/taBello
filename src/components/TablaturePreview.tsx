@@ -32,12 +32,12 @@ const TablaturePreview = ({ tablature }: TablaturePreviewProps) => {
       case 'header':
         return (
           <div key={index} className="mb-4">
-            <h3 className="text-lg font-semibold text-tabgenius-800">{section.content}</h3>
+            <h3 className="text-lg font-semibold text-tabello-800">{section.content}</h3>
           </div>
         );
       case 'chord':
         return (
-          <div key={index} className="mb-4 p-3 bg-tabgenius-50 dark:bg-tabgenius-950/30 rounded-md">
+          <div key={index} className="mb-4 p-3 bg-tabello-50 dark:bg-tabello-950/30 rounded-md">
             <p className="font-mono tracking-wider">{section.content}</p>
           </div>
         );
@@ -65,14 +65,14 @@ const TablaturePreview = ({ tablature }: TablaturePreviewProps) => {
       <div className="p-6">
         <div className="flex items-start justify-between mb-6">
           <div>
-            <span className="inline-block px-2 py-1 text-xs font-medium bg-tabgenius-100 text-tabgenius-800 rounded-full mb-2">
+            <span className="inline-block px-2 py-1 text-xs font-medium bg-tabello-100 text-tabello-800 rounded-full mb-2">
               {tablature.instrument === 'guitar' ? 'Guitar Tab' : 'Bass Tab'}
             </span>
             <h2 className="text-xl font-bold">{tablature.title}</h2>
           </div>
           <Button 
             onClick={handleDownload}
-            className="bg-tabgenius-700 hover:bg-tabgenius-800 text-white"
+            className="bg-tabello-700 hover:bg-tabello-800 text-white"
           >
             Download Tab
           </Button>
@@ -128,16 +128,16 @@ const TablaturePreview = ({ tablature }: TablaturePreviewProps) => {
             <div className="p-5 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
               <h3 className="text-sm font-medium text-gray-500 mb-2">Techniques Used</h3>
               <div className="flex flex-wrap gap-2">
-                <span className="inline-block px-3 py-1 text-xs font-medium bg-tabgenius-100 dark:bg-tabgenius-900/40 text-tabgenius-800 dark:text-tabgenius-300 rounded-full">
+                <span className="inline-block px-3 py-1 text-xs font-medium bg-tabello-100 dark:bg-tabello-900/40 text-tabello-800 dark:text-tabello-300 rounded-full">
                   Hammer-on
                 </span>
-                <span className="inline-block px-3 py-1 text-xs font-medium bg-tabgenius-100 dark:bg-tabgenius-900/40 text-tabgenius-800 dark:text-tabgenius-300 rounded-full">
+                <span className="inline-block px-3 py-1 text-xs font-medium bg-tabello-100 dark:bg-tabello-900/40 text-tabello-800 dark:text-tabello-300 rounded-full">
                   Pull-off
                 </span>
-                <span className="inline-block px-3 py-1 text-xs font-medium bg-tabgenius-100 dark:bg-tabgenius-900/40 text-tabgenius-800 dark:text-tabgenius-300 rounded-full">
+                <span className="inline-block px-3 py-1 text-xs font-medium bg-tabello-100 dark:bg-tabello-900/40 text-tabello-800 dark:text-tabello-300 rounded-full">
                   Slides
                 </span>
-                <span className="inline-block px-3 py-1 text-xs font-medium bg-tabgenius-100 dark:bg-tabgenius-900/40 text-tabgenius-800 dark:text-tabgenius-300 rounded-full">
+                <span className="inline-block px-3 py-1 text-xs font-medium bg-tabello-100 dark:bg-tabello-900/40 text-tabello-800 dark:text-tabello-300 rounded-full">
                   Palm Mute
                 </span>
               </div>
@@ -155,13 +155,13 @@ const TablaturePreview = ({ tablature }: TablaturePreviewProps) => {
           <TabsContent value="analysis" className="animate-fade-in">
             <div className="relative">
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-lg">
-                <Lock className="h-10 w-10 text-tabgenius-400 mb-2" />
+                <Lock className="h-10 w-10 text-tabello-400 mb-2" />
                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">Premium Feature</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 max-w-md text-center">
-                  Upgrade to TabGenius Premium to access detailed analysis of techniques, timing, and performance metrics.
+                  Upgrade to TaBello Premium to access detailed analysis of techniques, timing, and performance metrics.
                 </p>
                 <Button 
-                  className="bg-tabgenius-700 hover:bg-tabgenius-800 text-white"
+                  className="bg-tabello-700 hover:bg-tabello-800 text-white"
                   onClick={handleDownload}
                 >
                   Upgrade Now
@@ -175,13 +175,13 @@ const TablaturePreview = ({ tablature }: TablaturePreviewProps) => {
           <TabsContent value="notation" className="animate-fade-in">
             <div className="relative">
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-lg">
-                <Lock className="h-10 w-10 text-tabgenius-400 mb-2" />
+                <Lock className="h-10 w-10 text-tabello-400 mb-2" />
                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">Premium Feature</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 max-w-md text-center">
-                  Upgrade to TabGenius Premium to access standard music notation for this piece.
+                  Upgrade to TaBello Premium to access standard music notation for this piece.
                 </p>
                 <Button 
-                  className="bg-tabgenius-700 hover:bg-tabgenius-800 text-white"
+                  className="bg-tabello-700 hover:bg-tabello-800 text-white"
                   onClick={handleDownload}
                 >
                   Upgrade Now

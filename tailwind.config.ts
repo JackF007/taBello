@@ -63,8 +63,8 @@ export default {
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
 				},
-				// Custom colors
-				tabgenius: {
+				// Custom colors - renamed from tabgenius to tabello
+				tabello: {
 					50: '#f4f6fb',
 					100: '#e9ecf7',
 					200: '#d3daed',
