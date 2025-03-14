@@ -1,5 +1,5 @@
 
-// Mock tablature generation functions
+// Mock tablature generation functions that will be replaced by Supabase integration
 
 export interface TabSection {
   type: 'header' | 'chord' | 'tablature' | 'notes';
@@ -7,25 +7,31 @@ export interface TabSection {
 }
 
 export interface TablatureData {
+  id?: string; // For Supabase integration
   title: string;
   instrument: 'guitar' | 'bass';
   tuning: string;
   key: string;
   tempo: number;
   sections: TabSection[];
+  created_at?: string; // For Supabase integration
+  user_id?: string; // For Supabase integration
 }
 
 // Helper function to generate mock tablature data
+// This will be replaced with actual data processing logic and Supabase integration
 export const generateTablature = (fileName: string): TablatureData => {
   const isGuitar = Math.random() > 0.3; // 70% chance it's a guitar tab
   
   return {
+    id: `tab_${Date.now()}`,
     title: fileName.replace(/\.[^/.]+$/, ""),
     instrument: isGuitar ? 'guitar' : 'bass',
     tuning: isGuitar ? 'Standard (E A D G B E)' : 'Standard (E A D G)',
     key: getRandomKey(),
     tempo: Math.floor(Math.random() * 60) + 80, // Random tempo between 80-140 BPM
-    sections: generateMockSections(isGuitar)
+    sections: generateMockSections(isGuitar),
+    created_at: new Date().toISOString(),
   };
 };
 

@@ -1,4 +1,3 @@
-
 import { Music, Github, Twitter, Instagram } from 'lucide-react';
 
 const Footer = () => {
@@ -9,19 +8,19 @@ const Footer = () => {
           <div className="col-span-1 md:col-span-2">
             <div className="flex items-center space-x-2 mb-4">
               <Music className="h-6 w-6 text-tabgenius-700" />
-              <span className="font-semibold text-lg">TabGenius</span>
+              <span className="font-semibold text-lg">TaBello</span>
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
               Convert your audio and video recordings into accurate guitar and bass tablature with AI-powered technology.
             </p>
             <div className="flex space-x-4">
-              <a href="#" className="text-gray-500 hover:text-tabgenius-700 transition-colors">
+              <a href="https://github.com" className="text-gray-500 hover:text-tabgenius-700 transition-colors">
                 <Github className="h-5 w-5" />
               </a>
-              <a href="#" className="text-gray-500 hover:text-tabgenius-700 transition-colors">
+              <a href="https://twitter.com" className="text-gray-500 hover:text-tabgenius-700 transition-colors">
                 <Twitter className="h-5 w-5" />
               </a>
-              <a href="#" className="text-gray-500 hover:text-tabgenius-700 transition-colors">
+              <a href="https://instagram.com" className="text-gray-500 hover:text-tabgenius-700 transition-colors">
                 <Instagram className="h-5 w-5" />
               </a>
             </div>
@@ -48,7 +47,7 @@ const Footer = () => {
         
         <div className="pt-8 mt-8 border-t border-gray-200 dark:border-gray-800">
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
-            © {new Date().getFullYear()} TabGenius. All rights reserved.
+            © {new Date().getFullYear()} TaBello. All rights reserved.
           </p>
         </div>
       </div>
