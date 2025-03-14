@@ -71,18 +71,18 @@ const Index = () => {
         {/* Hero Section */}
         <section className="pt-32 pb-16 md:pb-24 px-6 md:px-10">
           <div className="max-w-5xl mx-auto text-center">
-            <span className="inline-block px-3 py-1 text-xs font-semibold bg-tabgenius-100 text-tabgenius-800 rounded-full mb-6 animate-fade-in">
+            <span className="inline-block px-3 py-1 text-xs font-semibold bg-tabello-100 text-tabello-800 rounded-full mb-6 animate-fade-in">
               AI-Powered Music Transcription
             </span>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight mb-6 animate-slide-up-fade">
               Turn Your Music Into 
-              <span className="text-tabgenius-700"> Tablature</span> Instantly
+              <span className="text-tabello-700"> Tablature</span> Instantly
             </h1>
             <p className="text-xl text-gray-600 dark:text-gray-400 mb-10 max-w-3xl mx-auto animate-slide-up-fade delay-100">
               Upload your guitar or bass recordings and our AI will transcribe them into accurate, detailed, and easy-to-read tablature.
             </p>
             
-            <ArrowDown className="h-10 w-10 text-tabgenius-500 mx-auto animate-bounce" />
+            <ArrowDown className="h-10 w-10 text-tabello-500 mx-auto animate-bounce" />
           </div>
         </section>
         
@@ -100,13 +100,13 @@ const Index = () => {
             
             {isProcessing && (
               <div className="text-center mt-6">
-                <div className="inline-flex items-center px-4 py-2 bg-tabgenius-100 text-tabgenius-800 rounded-full">
+                <div className="inline-flex items-center px-4 py-2 bg-tabello-100 text-tabello-800 rounded-full">
                   <div className="flex space-x-1 mr-2">
-                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave1"></div>
-                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave2"></div>
-                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave3"></div>
-                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave4"></div>
-                    <div className="w-2 h-6 bg-tabgenius-500 rounded-full animate-wave5"></div>
+                    <div className="w-2 h-6 bg-tabello-500 rounded-full animate-wave1"></div>
+                    <div className="w-2 h-6 bg-tabello-500 rounded-full animate-wave2"></div>
+                    <div className="w-2 h-6 bg-tabello-500 rounded-full animate-wave3"></div>
+                    <div className="w-2 h-6 bg-tabello-500 rounded-full animate-wave4"></div>
+                    <div className="w-2 h-6 bg-tabello-500 rounded-full animate-wave5"></div>
                   </div>
                   <span>Processing your music...</span>
                 </div>
@@ -166,8 +166,8 @@ const Index = () => {
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md transition-all duration-300 hover:shadow-lg">
-                <div className="w-12 h-12 bg-tabgenius-100 dark:bg-tabgenius-900/50 rounded-full flex items-center justify-center mb-4">
-                  <FileAudio className="h-6 w-6 text-tabgenius-700" />
+                <div className="w-12 h-12 bg-tabello-100 dark:bg-tabello-900/50 rounded-full flex items-center justify-center mb-4">
+                  <FileAudio className="h-6 w-6 text-tabello-700" />
                 </div>
                 <h3 className="text-lg font-medium mb-2">Upload Your Music</h3>
                 <p className="text-gray-600 dark:text-gray-400">
@@ -176,8 +176,8 @@ const Index = () => {
               </div>
               
               <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md transition-all duration-300 hover:shadow-lg">
-                <div className="w-12 h-12 bg-tabgenius-100 dark:bg-tabgenius-900/50 rounded-full flex items-center justify-center mb-4">
-                  <BarChart className="h-6 w-6 text-tabgenius-700" />
+                <div className="w-12 h-12 bg-tabello-100 dark:bg-tabello-900/50 rounded-full flex items-center justify-center mb-4">
+                  <BarChart className="h-6 w-6 text-tabello-700" />
                 </div>
                 <h3 className="text-lg font-medium mb-2">AI Analysis</h3>
                 <p className="text-gray-600 dark:text-gray-400">
@@ -186,8 +186,8 @@ const Index = () => {
               </div>
               
               <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md transition-all duration-300 hover:shadow-lg">
-                <div className="w-12 h-12 bg-tabgenius-100 dark:bg-tabgenius-900/50 rounded-full flex items-center justify-center mb-4">
-                  <Music className="h-6 w-6 text-tabgenius-700" />
+                <div className="w-12 h-12 bg-tabello-100 dark:bg-tabello-900/50 rounded-full flex items-center justify-center mb-4">
+                  <Music className="h-6 w-6 text-tabello-700" />
                 </div>
                 <h3 className="text-lg font-medium mb-2">Get Your Tabs</h3>
                 <p className="text-gray-600 dark:text-gray-400">
@@ -199,7 +199,7 @@ const Index = () => {
         </section>
         
         {/* CTA Section */}
-        <section id="pricing" className="py-20 px-6 md:px-10 bg-tabgenius-700 text-white">
+        <section id="pricing" className="py-20 px-6 md:px-10 bg-tabello-700 text-white">
           <div className="max-w-5xl mx-auto text-center">
             <Zap className="h-10 w-10 mx-auto mb-6" />
             <h2 className="text-2xl md:text-3xl font-bold mb-4">
@@ -211,7 +211,7 @@ const Index = () => {
             
             <a
               href="#upload"
-              className="inline-block bg-white text-tabgenius-700 hover:bg-gray-100 font-medium py-3 px-8 rounded-full transition-all duration-200 ease-in-out transform hover:scale-105"
+              className="inline-block bg-white text-tabello-700 hover:bg-gray-100 font-medium py-3 px-8 rounded-full transition-all duration-200 ease-in-out transform hover:scale-105"
             >
               Start Transcribing Now
             </a>
