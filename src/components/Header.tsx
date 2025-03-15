@@ -2,10 +2,14 @@
 import { useState, useEffect } from 'react';
 import { Menu, X, Music } from 'lucide-react';
 import { Button } from "@/components/ui/button";
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 
 const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -50,17 +54,30 @@ const Header = () => {
         </nav>
         
         <div className="hidden md:flex items-center space-x-4">
-          <Button 
-            variant="ghost" 
-            className="text-sm font-medium transition-colors hover:text-tabgenius-700"
-          >
-            Sign In
-          </Button>
-          <Button 
-            className="bg-tabgenius-700 hover:bg-tabgenius-800 text-white rounded-full transition-all duration-200 ease-in-out transform hover:scale-105"
-          >
-            Get Started
-          </Button>
+          {user ? (
+            <Button 
+              onClick={() => navigate('/dashboard')}
+              className="bg-tabgenius-700 hover:bg-tabgenius-800 text-white rounded-full transition-all duration-200 ease-in-out transform hover:scale-105"
+            >
+              Dashboard
+            </Button>
+          ) : (
+            <>
+              <Button 
+                variant="ghost" 
+                className="text-sm font-medium transition-colors hover:text-tabgenius-700"
+                onClick={() => navigate('/auth')}
+              >
+                Sign In
+              </Button>
+              <Button 
+                onClick={() => navigate('/auth')}
+                className="bg-tabgenius-700 hover:bg-tabgenius-800 text-white rounded-full transition-all duration-200 ease-in-out transform hover:scale-105"
+              >
+                Get Started
+              </Button>
+            </>
+          )}
         </div>
         
         <button 
@@ -100,17 +117,30 @@ const Header = () => {
             >
               Pricing
             </a>
-            <Button 
-              variant="ghost" 
-              className="justify-start px-0 text-sm font-medium transition-colors hover:text-tabgenius-700"
-            >
-              Sign In
-            </Button>
-            <Button 
-              className="bg-tabgenius-700 hover:bg-tabgenius-800 text-white rounded-full transition-all duration-200 ease-in-out transform hover:scale-105 w-full"
-            >
-              Get Started
-            </Button>
+            {user ? (
+              <Button 
+                onClick={() => navigate('/dashboard')}
+                className="bg-tabgenius-700 hover:bg-tabgenius-800 text-white rounded-full transition-all duration-200 ease-in-out transform hover:scale-105 w-full"
+              >
+                Dashboard
+              </Button>
+            ) : (
+              <>
+                <Button 
+                  variant="ghost" 
+                  className="justify-start px-0 text-sm font-medium transition-colors hover:text-tabgenius-700"
+                  onClick={() => navigate('/auth')}
+                >
+                  Sign In
+                </Button>
+                <Button 
+                  onClick={() => navigate('/auth')}
+                  className="bg-tabgenius-700 hover:bg-tabgenius-800 text-white rounded-full transition-all duration-200 ease-in-out transform hover:scale-105 w-full"
+                >
+                  Get Started
+                </Button>
+              </>
+            )}
           </nav>
         </div>
       )}

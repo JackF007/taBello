@@ -1,14 +1,14 @@
-
 import { useState } from 'react';
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from '@/components/ui/use-toast';
 import Header from '@/components/Header';
 import UploadSection from '@/components/UploadSection';
 import AudioPlayer from '@/components/AudioPlayer';
 import TablaturePreview from '@/components/TablaturePreview';
 import PaymentCard from '@/components/PaymentCard';
 import Footer from '@/components/Footer';
-import { generateTablature } from '@/lib/tablature';
+import { processAudioAndGenerateTablature } from '@/lib/tablature';
 import { saveTablature } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import { ArrowDown, FileAudio, FileVideo, Music, BarChart, Zap } from 'lucide-react';
 
 const Index = () => {
@@ -18,6 +18,7 @@ const Index = () => {
   const [processingComplete, setProcessingComplete] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
   
   const handleFileSelected = async (file: File) => {
     setSelectedFile(file);
@@ -28,30 +29,38 @@ const Index = () => {
     setFileUrl(url);
     
     try {
-      // Simulate processing
-      setTimeout(async () => {
-        const generatedTab = generateTablature(file.name);
-        
-        // Save to Supabase (mock function for now)
-        try {
-          await saveTablature(generatedTab);
-          toast({
-            title: "Tablature generated successfully!",
-            description: "Your tablature is ready to view and download.",
-          });
-        } catch (error) {
-          console.error("Error saving tablature:", error);
-          toast({
-            title: "Error saving tablature",
-            description: "There was an error saving your tablature. Please try again.",
-            variant: "destructive",
-          });
-        }
-        
-        setTablature(generatedTab);
-        setProcessingComplete(true);
+      if (!user) {
+        toast({
+          title: "Authentication required",
+          description: "Please sign in to save your tablature.",
+          variant: "destructive",
+        });
         setIsProcessing(false);
-      }, 2500);
+        return;
+      }
+
+      // Process the audio file and generate tablature using AI
+      const generatedTab = await processAudioAndGenerateTablature(file);
+      generatedTab.user_id = user.id;
+      
+      try {
+        await saveTablature(generatedTab);
+        toast({
+          title: "Tablature generated successfully!",
+          description: "Your tablature is ready to view and download.",
+        });
+      } catch (error) {
+        console.error("Error saving tablature:", error);
+        toast({
+          title: "Error saving tablature",
+          description: "There was an error saving your tablature. Please try again.",
+          variant: "destructive",
+        });
+      }
+      
+      setTablature(generatedTab);
+      setProcessingComplete(true);
+      setIsProcessing(false);
     } catch (error) {
       console.error("Error processing file:", error);
       toast({
