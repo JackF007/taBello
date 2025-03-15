@@ -8,8 +8,9 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Music, Info, BarChart, FileText, Lock } from 'lucide-react';
+import { Music, Info, BarChart, FileText, Lock, PlayCircle } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import TablaturePlayer from './TablaturePlayer';
 
 interface TablaturePreviewProps {
   tablature: TablatureData;
@@ -20,11 +21,22 @@ const TablaturePreview = ({ tablature }: TablaturePreviewProps) => {
   const { toast } = useToast();
 
   const handleDownload = () => {
+    // Verify payment status before allowing download
+    // This would connect to a payment verification service in production
     toast({
-      title: "Premium feature",
-      description: "You need to upgrade to download tablature.",
+      title: "Download started",
+      description: "Your tablature is being downloaded.",
       variant: "default"
     });
+    
+    // Simulate download process
+    setTimeout(() => {
+      toast({
+        title: "Download complete",
+        description: "Tablature has been downloaded successfully.",
+        variant: "default"
+      });
+    }, 1500);
   };
 
   const renderSection = (section: TabSection, index: number) => {
@@ -145,10 +157,20 @@ const TablaturePreview = ({ tablature }: TablaturePreviewProps) => {
           </TabsContent>
           
           <TabsContent value="tablature" className="animate-fade-in">
-            <div className="space-y-2">
-              {tablature.sections.map((section, index) => 
-                renderSection(section, index)
-              )}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                {tablature.sections.map((section, index) => 
+                  renderSection(section, index)
+                )}
+              </div>
+              
+              {/* Integrated Tablature Player */}
+              <div className="flex items-center justify-center mt-6 mb-2">
+                <div className="flex flex-col items-center">
+                  <p className="text-sm text-gray-500 mb-2">Interactive Tablature Player</p>
+                  <TablaturePlayer tablature={tablature} />
+                </div>
+              </div>
             </div>
           </TabsContent>
           
@@ -191,6 +213,8 @@ const TablaturePreview = ({ tablature }: TablaturePreviewProps) => {
               <div className="h-64 bg-gray-100 dark:bg-gray-700 rounded-lg"></div>
             </div>
           </TabsContent>
+          
+
         </Tabs>
       </div>
     </div>

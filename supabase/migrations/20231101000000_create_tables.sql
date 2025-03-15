@@ -2,11 +2,6 @@
 -- Create schema for app
 CREATE SCHEMA IF NOT EXISTS public;
 
--- Enable RLS
-ALTER DATABASE postgres SET "anon.role" TO "anon";
-ALTER DATABASE postgres SET "service_role.role" TO "service_role";
-ALTER DATABASE postgres SET "authenticated.role" TO "authenticated";
-
 -- Create tablatures table
 CREATE TABLE IF NOT EXISTS public.tablatures (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,

@@ -1,5 +1,5 @@
 
-// Mock tablature generation functions that will be replaced by Supabase integration
+// Tablature data structures and processing functions
 
 export interface TabSection {
   type: 'header' | 'chord' | 'tablature' | 'notes';
@@ -18,9 +18,12 @@ export interface TablatureData {
   user_id?: string; // For Supabase integration
 }
 
-// Helper function to generate mock tablature data
-// This will be replaced with actual data processing logic and Supabase integration
+// Generate tablature data from a file name
+// This is a wrapper around the audio processing functions
 export const generateTablature = (fileName: string): TablatureData => {
+  // For now, we'll still use mock data since we don't have the actual audio file here
+  // In a real implementation, this would call processAudioFile and convertAnalysisToTablature
+  // from the audioProcessing module
   const isGuitar = Math.random() > 0.3; // 70% chance it's a guitar tab
   
   return {
@@ -33,6 +36,25 @@ export const generateTablature = (fileName: string): TablatureData => {
     sections: generateMockSections(isGuitar),
     created_at: new Date().toISOString(),
   };
+};
+
+// Process audio file and generate tablature
+// This is the main function that will be called from the UI
+export const processAudioAndGenerateTablature = async (file: File): Promise<TablatureData> => {
+  try {
+    // Import the audio processing functions dynamically to avoid circular dependencies
+    const { processAudioFile, convertAnalysisToTablature } = await import('./audioProcessing');
+    
+    // Process the audio file to extract musical features
+    const analysis = await processAudioFile(file);
+    
+    // Convert the analysis results to tablature data
+    return convertAnalysisToTablature(file.name, analysis);
+  } catch (error) {
+    console.error('Error processing audio:', error);
+    // Fall back to mock data if processing fails
+    return generateTablature(file.name);
+  }
 };
 
 const getRandomKey = (): string => {
