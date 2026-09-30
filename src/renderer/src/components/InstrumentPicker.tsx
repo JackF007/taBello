@@ -11,7 +11,7 @@ interface InstrumentPickerProps {
 
 /** Big instrument cards; the selected one glows in the instrument's color. */
 const InstrumentPicker = ({ value, onChange, disabled }: InstrumentPickerProps) => (
-  <div role="radiogroup" aria-label="Instrument" className="grid grid-cols-5 gap-3">
+  <div role="radiogroup" aria-label="Instrument" className="grid grid-cols-3 gap-3">
     {Object.values(INSTRUMENTS).map((instrument) => {
       const selected = instrument.id === value;
       return (
