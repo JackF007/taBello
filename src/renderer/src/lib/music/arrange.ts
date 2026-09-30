@@ -1,6 +1,5 @@
-// Turns detected notes (real time) into a written arrangement:
-// quantize to a 16th-note grid → group into chords → place the notes
-// (strings/frets for guitar and bass, staves for the other instruments) → split into 4/4 bars.
+// Turns detected notes (real time) into a playable tablature arrangement:
+// quantize to a 16th-note grid → group into chords → pick strings/frets → split into 4/4 bars.
 import type { NoteEvent } from '../../../../shared/ipc';
 
 export const SLOTS_PER_BEAT = 4; // 16th notes
@@ -8,13 +7,13 @@ export const BEATS_PER_BAR = 4; // 4/4
 export const SLOTS_PER_BAR = SLOTS_PER_BEAT * BEATS_PER_BAR;
 
 export interface PlacedNote {
+  /** String index in the tuning's physical order (see Tuning.strings). */
+  string: number;
+  /** Fret, relative to the capo. */
+  fret: number;
   pitch: number;
   /** Continuation of the same note from the previous beat (a tie). */
   tied: boolean;
-  /** String index, 0 = lowest-pitched string (fretted instruments only). */
-  string?: number;
-  /** Fret, relative to the capo (fretted instruments only). */
-  fret?: number;
 }
 
 export type NoteValue = 1 | 2 | 4 | 8 | 16;
@@ -27,49 +26,28 @@ export interface TabBeat {
 }
 
 export interface Arrangement {
-  /** One entry per staff (a single staff, or treble + bass for a grand staff), each a list of bars. */
-  staves: TabBeat[][][];
-  /** Notes that could not be placed (more simultaneous notes than the instrument allows). */
+  bars: TabBeat[][];
+  /** Notes that could not be placed (e.g. more simultaneous notes than strings). */
   droppedNotes: number;
-  /** Total fingering difficulty (fretted instruments); lower is easier. Used to detect a capo. */
+  /** Total fingering difficulty; lower is easier. Used to detect a capo. */
   cost: number;
 }
 
-interface Timing {
+export interface ArrangeOptions {
+  /** Open-string MIDI pitches without capo, in the tuning's physical order. */
+  tuning: number[];
+  frets: number;
   bpm: number;
   /** Time in seconds of a beat; aligns the grid with the music. */
   offset: number;
-}
-
-export interface FrettedOptions extends Timing {
-  kind: 'fretted';
-  /** Open-string MIDI pitches without capo, lowest string first. */
-  tuning: number[];
-  frets: number;
   /** Capo fret (0 = none). Frets in the result are relative to it. */
   capo?: number;
 }
-
-export interface PitchedOptions extends Timing {
-  kind: 'pitched';
-  range: [lowest: number, highest: number];
-  maxPolyphony: number;
-  /** When set, notes at or above this pitch go to the upper staff and the others to the lower one. */
-  splitAt?: number;
-}
-
-export type ArrangeOptions = FrettedOptions | PitchedOptions;
 
 interface Chord {
   slot: number;
   endSlot: number;
   pitches: { pitch: number; velocity: number }[];
-}
-
-interface PlacedChord {
-  slot: number;
-  endSlot: number;
-  notes: PlacedNote[];
 }
 
 interface Fingering {
@@ -102,13 +80,13 @@ function foldIntoRange(pitch: number, lowest: number, highest: number): number {
   return pitch;
 }
 
-function quantize(notes: NoteEvent[], { bpm, offset }: Timing, lowest: number, highest: number): Chord[] {
-  const slotSeconds = 60 / bpm / SLOTS_PER_BEAT;
+function quantize(notes: NoteEvent[], options: ArrangeOptions, lowest: number, highest: number): Chord[] {
+  const slotSeconds = 60 / options.bpm / SLOTS_PER_BEAT;
 
   // Put the grid origin on a beat at or before the first note.
   const firstStart = Math.min(...notes.map((n) => n.start));
   const beatSeconds = slotSeconds * SLOTS_PER_BEAT;
-  const origin = offset - Math.ceil((offset - firstStart - slotSeconds / 2) / beatSeconds) * beatSeconds;
+  const origin = options.offset - Math.ceil((options.offset - firstStart - slotSeconds / 2) / beatSeconds) * beatSeconds;
 
   const bySlot = new Map<number, Chord>();
   for (const note of notes) {
@@ -153,16 +131,15 @@ function fingerings(pitches: number[], tuning: number[], frets: number): Fingeri
 
   return results
     .map((notes) => {
-      const fretList = notes.map((n) => n.fret!);
-      const fretted = fretList.filter((f) => f > 0);
+      const fretted = notes.filter((n) => n.fret > 0).map((n) => n.fret);
       const position = fretted.length > 0 ? Math.min(...fretted) : null;
       const span = fretted.length > 0 ? Math.max(...fretted) - Math.min(...fretted) : 0;
-      const averageFret = fretList.reduce((s, f) => s + f, 0) / notes.length;
-      const highestFret = Math.max(...fretList);
+      const averageFret = notes.reduce((s, n) => s + n.fret, 0) / notes.length;
+      const highestFret = Math.max(...notes.map((n) => n.fret));
       // Stretches beyond 4 frets are barely playable; otherwise prefer compact shapes low on the neck,
       // and avoid the top of the neck unless nothing else works.
       const cost = (span > 4 ? 10 + span * 2 : span * 0.5) + averageFret * 0.15 + Math.max(0, highestFret - 12) * 0.5;
-      return { notes: notes.sort((a, b) => a.string! - b.string!), cost, position };
+      return { notes: notes.sort((a, b) => a.string - b.string), cost, position };
     })
     .sort((a, b) => a.cost - b.cost)
     .slice(0, MAX_CANDIDATES);
@@ -227,43 +204,6 @@ function chooseFingerings(candidateLists: Fingering[][]): { chosen: Fingering[];
   return { chosen, cost };
 }
 
-function placeFretted(notes: NoteEvent[], options: FrettedOptions): { chords: PlacedChord[]; dropped: number; cost: number } {
-  const capo = options.capo ?? 0;
-  const tuning = options.tuning.map((pitch) => pitch + capo);
-  const frets = options.frets - capo;
-  const chords = quantize(notes, options, tuning[0], tuning[tuning.length - 1] + frets);
-
-  let dropped = 0;
-  const playable: { chord: Chord; candidates: Fingering[] }[] = [];
-  for (const chord of chords) {
-    const result = chordCandidates(chord, tuning, frets);
-    dropped += result.dropped;
-    if (result.candidates.length > 0) playable.push({ chord, candidates: result.candidates });
-  }
-  const { chosen, cost } = chooseFingerings(playable.map((p) => p.candidates));
-  return {
-    chords: playable.map(({ chord }, i) => ({ slot: chord.slot, endSlot: chord.endSlot, notes: chosen[i].notes })),
-    dropped,
-    cost: cost + dropped * DROPPED_NOTE_COST,
-  };
-}
-
-function placePitched(notes: NoteEvent[], options: PitchedOptions): { staves: PlacedChord[][]; dropped: number } {
-  const chords = quantize(notes, options, ...options.range);
-  const staves: PlacedChord[][] = options.splitAt === undefined ? [[]] : [[], []];
-  let dropped = 0;
-  for (const chord of chords) {
-    const kept = [...chord.pitches].sort((a, b) => b.velocity - a.velocity).slice(0, options.maxPolyphony);
-    dropped += chord.pitches.length - kept.length;
-    const placed = kept.map((p) => ({ pitch: p.pitch, tied: false })).sort((a, b) => a.pitch - b.pitch);
-    const parts = options.splitAt === undefined ? [placed] : [placed.filter((n) => n.pitch >= options.splitAt!), placed.filter((n) => n.pitch < options.splitAt!)];
-    parts.forEach((part, staff) => {
-      if (part.length > 0) staves[staff].push({ slot: chord.slot, endSlot: chord.endSlot, notes: part });
-    });
-  }
-  return { staves, dropped };
-}
-
 /** Splits a span of slots into bar-aligned beats with standard note values. */
 function splitIntoBeats(start: number, length: number, notes: PlacedNote[], out: Map<number, TabBeat[]>): void {
   let cursor = start;
@@ -281,48 +221,40 @@ function splitIntoBeats(start: number, length: number, notes: PlacedNote[], out:
   }
 }
 
-/** Lays a staff's chords out on the timeline: each lasts until it ends or the next chord starts, gaps become rests. */
-function toBeats(chords: PlacedChord[]): { beatsByBar: Map<number, TabBeat[]>; endSlot: number } {
+export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangement {
+  const wholeRest = (): TabBeat[] => [{ notes: [], value: 1, dotted: false }];
+  if (notes.length === 0) return { bars: [wholeRest()], droppedNotes: 0, cost: 0 };
+
+  const capo = options.capo ?? 0;
+  const tuning = options.tuning.map((pitch) => pitch + capo);
+  const frets = options.frets - capo;
+  // Not tuning[0] / tuning.at(-1): re-entrant tunings (ukulele) are not in pitch order.
+  const chords = quantize(notes, options, Math.min(...tuning), Math.max(...tuning) + frets);
+
+  let droppedNotes = 0;
+  const playable: { chord: Chord; candidates: Fingering[] }[] = [];
+  for (const chord of chords) {
+    const { candidates, dropped } = chordCandidates(chord, tuning, frets);
+    droppedNotes += dropped;
+    if (candidates.length > 0) playable.push({ chord, candidates });
+  }
+  const { chosen, cost } = chooseFingerings(playable.map((p) => p.candidates));
+
+  // Each chord lasts until it ends or the next one starts; gaps become rests.
   const beatsByBar = new Map<number, TabBeat[]>();
   let cursor = 0;
-  chords.forEach((chord, i) => {
+  playable.forEach(({ chord }, i) => {
     if (chord.slot > cursor) splitIntoBeats(cursor, chord.slot - cursor, [], beatsByBar);
-    const end = Math.min(chord.endSlot, chords[i + 1]?.slot ?? Infinity);
-    splitIntoBeats(chord.slot, end - chord.slot, chord.notes, beatsByBar);
+    const end = Math.min(chord.endSlot, playable[i + 1]?.chord.slot ?? Infinity);
+    splitIntoBeats(chord.slot, end - chord.slot, chosen[i].notes, beatsByBar);
     cursor = end;
   });
-  return { beatsByBar, endSlot: cursor };
-}
+  // Pad the last bar with rests.
+  const totalSlots = Math.max(SLOTS_PER_BAR, Math.ceil(cursor / SLOTS_PER_BAR) * SLOTS_PER_BAR);
+  if (totalSlots > cursor) splitIntoBeats(cursor, totalSlots - cursor, [], beatsByBar);
 
-export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangement {
-  const staffCount = options.kind === 'pitched' && options.splitAt !== undefined ? 2 : 1;
-  const wholeRest = (): TabBeat[] => [{ notes: [], value: 1, dotted: false }];
-  if (notes.length === 0) {
-    return { staves: Array.from({ length: staffCount }, () => [wholeRest()]), droppedNotes: 0, cost: 0 };
-  }
-
-  let staffChords: PlacedChord[][];
-  let droppedNotes: number;
-  let cost = 0;
-  if (options.kind === 'fretted') {
-    const placed = placeFretted(notes, options);
-    staffChords = [placed.chords];
-    droppedNotes = placed.dropped;
-    cost = placed.cost;
-  } else {
-    const placed = placePitched(notes, options);
-    staffChords = placed.staves;
-    droppedNotes = placed.dropped;
-  }
-
-  const laidOut = staffChords.map(toBeats);
-  // All staves get the same number of bars, padded with rests.
-  const barCount = Math.max(1, ...laidOut.map(({ endSlot }) => Math.ceil(endSlot / SLOTS_PER_BAR)));
-  const staves = laidOut.map(({ beatsByBar, endSlot }) => {
-    if (barCount * SLOTS_PER_BAR > endSlot) splitIntoBeats(endSlot, barCount * SLOTS_PER_BAR - endSlot, [], beatsByBar);
-    return Array.from({ length: barCount }, (_, i) => beatsByBar.get(i) ?? wholeRest());
-  });
-  return { staves, droppedNotes, cost };
+  const bars = Array.from({ length: totalSlots / SLOTS_PER_BAR }, (_, i) => beatsByBar.get(i) ?? wholeRest());
+  return { bars, droppedNotes, cost: cost + droppedNotes * DROPPED_NOTE_COST };
 }
 
 /** Share of onsets (notes starting within 50 ms of each other) that are chords of three notes or more. */
@@ -341,23 +273,24 @@ function chordShare(notes: NoteEvent[]): number {
 }
 
 /**
- * Suggests a capo position for a fretted instrument. A capo is used to play open chord shapes in
- * another key, so it is only considered for chordal parts that reach down to the capoed low strings,
- * and only where (almost) no note is lower than the capoed lowest string. Among those positions it
- * picks the one whose fingerings are clearly easier.
+ * Suggests a capo position. A capo is used to play open chord shapes in another key, so it is only
+ * considered for chordal parts that reach down to the capoed low strings, and only where (almost) no
+ * note is lower than the capoed lowest string. Among those positions it picks the one whose
+ * fingerings are clearly easier.
  */
-export function detectCapo(notes: NoteEvent[], options: Omit<FrettedOptions, 'capo'>, maxCapo: number): number {
+export function detectCapo(notes: NoteEvent[], options: Omit<ArrangeOptions, 'capo'>, maxCapo: number): number {
   // Melodies and riffs: open strings high up the neck would look "easier", but that is not a capo.
   if (notes.length === 0 || chordShare(notes) < 0.3) return 0;
-  const lowest = Math.min(...notes.map((n) => n.pitch));
+  const [lowestString, secondLowestString] = [...options.tuning].sort((a, b) => a - b);
+  const lowestNote = Math.min(...notes.map((n) => n.pitch));
   const baseline = arrange(notes, { ...options, capo: 0 }).cost;
   let best = { capo: 0, cost: baseline };
   for (let capo = 1; capo <= maxCapo; capo++) {
-    const tooLow = notes.filter((n) => n.pitch < options.tuning[0] + capo).length;
+    const tooLow = notes.filter((n) => n.pitch < lowestString + capo).length;
     // A few stray low notes (noise, harmonics) are tolerated; more means no capo this high.
     if (tooLow > notes.length * 0.02) break;
     // Open-shape chords with a capo have their bass on the capoed low strings.
-    if (lowest > options.tuning[1] + capo) continue;
+    if (lowestNote > secondLowestString + capo) continue;
     const { cost } = arrange(notes, { ...options, capo });
     if (cost < best.cost) best = { capo, cost };
   }

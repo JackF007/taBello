@@ -20,7 +20,6 @@ import { formatDate, formatDuration, isVideoFile } from '@/lib/format';
 import { arrange, detectCapo } from '@/lib/music/arrange';
 import { toAlphaTex, toMidi } from '@/lib/music/export';
 import { toGuitarPro } from '@/lib/music/guitarPro';
-import { arrangementOptions } from '@/lib/music/score';
 import { detectKey, estimateTempo } from '@/lib/music/theory';
 import { projectMediaUrl, type ExportFormat, type Project, type ProjectSettings } from '../../../shared/ipc';
 import { getTuning, INSTRUMENTS, MAX_CAPO, type InstrumentId } from '../../../shared/instruments';
@@ -53,20 +52,19 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const key = useMemo(() => detectKey(project.notes), [project.notes]);
   const instrument = INSTRUMENTS[settings.instrument];
   const tuning = getTuning(settings.instrument, settings.tuningId);
-  const isFretted = instrument.notation === 'tab';
   const bpm = settings.tempo ?? detectedTempo.bpm;
   const timing = useMemo(() => ({ bpm, offset: detectedTempo.offset }), [bpm, detectedTempo.offset]);
   const [tempoText, setTempoText] = useState(String(bpm));
   useEffect(() => setTempoText(String(bpm)), [bpm]);
 
   const detectedCapo = useMemo(
-    () => (isFretted ? detectCapo(project.notes, { kind: 'fretted', tuning: tuning.strings, frets: instrument.frets, ...timing }, MAX_CAPO) : 0),
-    [isFretted, project.notes, tuning, instrument, timing],
+    () => detectCapo(project.notes, { tuning: tuning.strings, frets: instrument.frets, ...timing }, MAX_CAPO),
+    [project.notes, tuning, instrument, timing],
   );
-  const capo = isFretted ? (settings.capo ?? detectedCapo) : 0;
+  const capo = settings.capo ?? detectedCapo;
 
   const arrangement = useMemo(
-    () => arrange(project.notes, arrangementOptions(instrument, tuning, timing, capo)),
+    () => arrange(project.notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo }),
     [project.notes, instrument, tuning, timing, capo],
   );
   const tex = useMemo(
@@ -155,34 +153,30 @@ const ProjectEditor = ({ project }: { project: Project }) => {
           </Select>
         </Field>
 
-        {isFretted && (
-          <>
-            <Field label="Tuning" htmlFor="tuning">
-              <Select value={tuning.id} onValueChange={(tuningId) => updateSettings({ ...settings, tuningId })}>
-                <SelectTrigger id="tuning" className="w-[250px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {instrument.tunings.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </Field>
+        <Field label="Tuning" htmlFor="tuning">
+          <Select value={tuning.id} onValueChange={(tuningId) => updateSettings({ ...settings, tuningId })}>
+            <SelectTrigger id="tuning" className="w-[250px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {instrument.tunings.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </Field>
 
-            <Field label="Capo" htmlFor="capo">
-              <Select
-                value={settings.capo === null ? 'auto' : String(settings.capo)}
-                onValueChange={(value) => updateSettings({ ...settings, capo: value === 'auto' ? null : Number(value) })}
-              >
-                <SelectTrigger id="capo" className="w-[150px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Auto ({detectedCapo === 0 ? 'none' : `${ordinal(detectedCapo)} fret`})</SelectItem>
-                  <SelectItem value="0">No capo</SelectItem>
-                  {Array.from({ length: MAX_CAPO }, (_, i) => i + 1).map((fret) => (
-                    <SelectItem key={fret} value={String(fret)}>{ordinal(fret)} fret</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          </>
-        )}
+        <Field label="Capo" htmlFor="capo">
+          <Select
+            value={settings.capo === null ? 'auto' : String(settings.capo)}
+            onValueChange={(value) => updateSettings({ ...settings, capo: value === 'auto' ? null : Number(value) })}
+          >
+            <SelectTrigger id="capo" className="w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto ({detectedCapo === 0 ? 'none' : `${ordinal(detectedCapo)} fret`})</SelectItem>
+              <SelectItem value="0">No capo</SelectItem>
+              {Array.from({ length: MAX_CAPO }, (_, i) => i + 1).map((fret) => (
+                <SelectItem key={fret} value={String(fret)}>{ordinal(fret)} fret</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
 
         <Field label="Tempo (BPM)" htmlFor="tempo">
           <div className="flex items-center gap-1">
@@ -213,7 +207,7 @@ const ProjectEditor = ({ project }: { project: Project }) => {
           <p className="h-10 flex items-center font-display text-lg">{key.name}</p>
         </Field>
 
-        {isFretted && capo > 0 && (
+        {capo > 0 && (
           <span
             className="ml-auto flex items-center gap-1.5 rounded-full border border-gh-yellow/60 bg-gh-yellow/10 px-3 py-1.5 text-sm text-gh-yellow"
             role="status"
