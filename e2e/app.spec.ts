@@ -1,7 +1,7 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import ffmpegPath from 'ffmpeg-static';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -23,6 +23,16 @@ test.beforeAll(async () => {
   ffmpeg('-f', 'lavfi', '-i', 'sine=f=196:d=240', path.join(dir, 'long.wav'));
   writeFileSync(path.join(dir, 'not-audio.mp3'), 'not audio');
 
+  // A project saved by an older version with an instrument that is no longer supported.
+  const legacyDir = path.join(dir, 'user-data', 'projects', 'a'.repeat(32));
+  mkdirSync(legacyDir, { recursive: true });
+  writeFileSync(path.join(legacyDir, 'notes.json'), JSON.stringify([{ start: 0, duration: 1, pitch: 60, velocity: 0.8 }]));
+  writeFileSync(path.join(legacyDir, 'meta.json'), JSON.stringify({
+    schemaVersion: 1, id: 'a'.repeat(32), title: 'old piano project', createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z', sourceName: 'old.wav', sourcePath: path.join(dir, 'old.wav'), durationSeconds: 1,
+    noteCount: 1, settings: { instrument: 'piano', tuningId: 'standard', tempo: null, capo: null },
+  }));
+
   app = await electron.launch({
     args: ['.', `--user-data-dir=${path.join(dir, 'user-data')}`, ...(process.env.CI ? ['--no-sandbox'] : [])],
   });
@@ -32,6 +42,19 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await app?.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('reopens projects of removed instruments as guitar', async () => {
+  await page.getByRole('link', { name: 'Library' }).first().click();
+  await page.getByRole('link', { name: 'Open old piano project' }).click();
+  await expect(page.locator('#instrument')).toContainText('Guitar');
+  await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 30_000 });
+
+  await page.getByRole('link', { name: 'Library' }).first().click();
+  await page.getByRole('button', { name: 'Delete old piano project' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.getByText('No transcriptions yet')).toBeVisible();
+  await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
 });
 
 test('transcribes a video into a playable, exportable score', async () => {
@@ -80,16 +103,15 @@ test('lists and deletes projects in the library', async () => {
   expect(readdirSync(path.join(dir, 'user-data', 'projects'))).toHaveLength(0);
 });
 
-test('writes piano parts on a grand staff', async () => {
+test('writes ukulele tabs with ukulele tunings', async () => {
   await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
-  await page.getByRole('radio', { name: 'Piano' }).click();
+  await page.getByRole('radio', { name: 'Ukulele' }).click();
   await page.setInputFiles('#file-upload', path.join(dir, 'arpeggio.mp4'));
   await page.waitForURL(/#\/project\//, { timeout: 60_000 });
 
-  await expect(page.locator('#instrument')).toContainText('Piano');
-  // No strings, so no tuning or capo.
-  await expect(page.locator('#tuning')).toHaveCount(0);
-  await expect(page.locator('#capo')).toHaveCount(0);
+  await expect(page.locator('#instrument')).toContainText('Ukulele');
+  await expect(page.locator('#tuning')).toContainText('Standard, high G');
+  await expect(page.locator('#capo')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 30_000 });
 });
 

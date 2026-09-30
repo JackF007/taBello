@@ -12,8 +12,8 @@ Drop in an `.mp4`, `.mov`, `.mp3`, `.wav` (or any format FFmpeg understands), an
 ## Features
 
 - **Any audio or video file** up to 15 minutes, via drag & drop or the file picker.
-- **Five instruments**: guitar and bass (notation + tablature, common tunings), piano and accordion (grand staff), violin (treble staff).
-- **Capo detection** for guitar: open-position shapes played higher up the neck are recognized, and the tab is written relative to the capo (adjustable by hand).
+- **Guitar, bass and ukulele**, written as standard notation + tablature, with common tunings (including the ukulele's re-entrant high-G tuning).
+- **Capo detection**: open-position shapes played higher up the neck are recognized, and the tab is written relative to the capo (adjustable by hand).
 - **Automatic tempo and key detection**; the tempo can be halved, doubled or typed in, and the score updates instantly.
 - **Playable fingerings**: notes are placed on strings/frets by an optimizer that keeps chord shapes compact and hand movement small.
 - **Notation + tablature** rendered with alphaTab, with synthesized playback, a cursor, a metronome and slow-down; tab numbers are colored by string.

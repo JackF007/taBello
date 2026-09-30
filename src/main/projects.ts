@@ -33,11 +33,24 @@ async function readMeta(dir: string): Promise<StoredMeta | null> {
   try {
     const meta = JSON.parse(await readFile(path.join(dir, 'meta.json'), 'utf8')) as StoredMeta;
     if (meta.schemaVersion !== 1) return null;
-    // Projects saved before the capo setting existed default to automatic detection.
-    return { ...meta, settings: { ...meta.settings, capo: meta.settings.capo ?? null } };
+    return { ...meta, settings: normalizeSettings(meta.settings) };
   } catch {
     return null;
   }
+}
+
+/** Brings settings saved by older versions up to date. */
+function normalizeSettings(settings: Partial<ProjectSettings>): ProjectSettings {
+  // Piano, violin and accordion were briefly supported; their projects reopen as guitar.
+  const instrument: InstrumentId = isInstrumentId(settings.instrument) ? settings.instrument : 'guitar';
+  const { tunings } = INSTRUMENTS[instrument];
+  return {
+    instrument,
+    tuningId: tunings.some((t) => t.id === settings.tuningId) ? settings.tuningId! : tunings[0].id,
+    tempo: settings.tempo ?? null,
+    // Projects saved before the capo setting existed default to automatic detection.
+    capo: instrument === settings.instrument ? (settings.capo ?? null) : null,
+  };
 }
 
 function toSummary({ schemaVersion: _version, sourcePath: _path, ...summary }: StoredMeta): ProjectSummary {
