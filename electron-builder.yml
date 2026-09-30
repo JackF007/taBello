@@ -1,3 +1,7 @@
+# Zero-cost distribution: no paid certificates.
+# - macOS: ad-hoc signed ("-"); users confirm the first launch in System Settings → Privacy & Security.
+# - Windows: unsigned; SmartScreen shows "More info → Run anyway" until the app builds reputation.
+# - Linux: AppImage, runs on any distribution without installation.
 appId: org.tabello.app
 productName: TaBello
 directories:
@@ -7,11 +11,13 @@ files:
   - out/**
   - package.json
 asarUnpack:
-  # Native binaries (e.g. ffmpeg-static) must live outside app.asar to be executable.
-  - "**/*.node"
+  # Executables and native files must live outside app.asar.
   - "**/node_modules/ffmpeg-static/**"
+  - "**/*.node"
 mac:
   category: public.app-category.music
+  identity: "-"
+  hardenedRuntime: false
   target: dmg
 win:
   target: nsis
@@ -20,7 +26,7 @@ nsis:
   allowToChangeInstallationDirectory: true
 linux:
   category: Audio
-  target:
-    - AppImage
-    - deb
-publish: null
+  target: AppImage
+publish:
+  provider: github
+  releaseType: draft

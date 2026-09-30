@@ -1,0 +1,30 @@
+# Builds installers on GitHub's free runners and attaches them to a draft GitHub Release.
+# Trigger: push a tag matching the package.json version, e.g. `git tag v0.1.0 && git push origin v0.1.0`.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple Silicon; ffmpeg-static downloads the binary for the runner's platform.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx electron-vite build
+      - run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
