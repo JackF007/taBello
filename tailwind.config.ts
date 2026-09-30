@@ -62,6 +62,14 @@ export default {
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
 				},
+				gh: {
+					green: 'var(--gh-green)',
+					red: 'var(--gh-red)',
+					yellow: 'var(--gh-yellow)',
+					blue: 'var(--gh-blue)',
+					orange: 'var(--gh-orange)',
+					purple: 'var(--gh-purple)',
+				},
 				// Custom colors - renamed from tabgenius to tabello
 				tabello: {
 					50: '#f4f6fb',
@@ -76,6 +84,9 @@ export default {
 					900: '#423f63',
 					950: '#27253b',
 				}
+			},
+			fontFamily: {
+				display: ['"Russo One"', '"Inter Variable"', 'sans-serif'],
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
@@ -111,6 +122,14 @@ export default {
 					'0%, 100%': { opacity: '1' },
 					'50%': { opacity: '0.7' }
 				},
+				'rise-in': {
+					'0%': { opacity: '0', transform: 'translateY(14px) scale(0.98)' },
+					'100%': { opacity: '1', transform: 'translateY(0) scale(1)' }
+				},
+				'glow-pulse': {
+					'0%, 100%': { boxShadow: '0 0 0 0 var(--glow, rgb(255 138 31 / 0.5))' },
+					'50%': { boxShadow: '0 0 28px 2px var(--glow, rgb(255 138 31 / 0.5))' }
+				},
 				'wave': {
 					'0%': { transform: 'scaleY(0.2)' },
 					'50%': { transform: 'scaleY(1)' },
@@ -125,6 +144,8 @@ export default {
 				'slide-in-right': 'slide-in-right 0.3s ease-out',
 				'fade-in': 'fade-in 0.3s ease-in-out',
 				'pulse-soft': 'pulse-soft 2s ease-in-out infinite',
+				'rise-in': 'rise-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both',
+				'glow-pulse': 'glow-pulse 2.4s ease-in-out infinite',
 				'wave1': 'wave 1.2s ease-in-out infinite',
 				'wave2': 'wave 1.2s ease-in-out infinite 0.1s',
 				'wave3': 'wave 1.2s ease-in-out infinite 0.2s',
