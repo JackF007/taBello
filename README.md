@@ -107,6 +107,10 @@ npm run build      # production build into out/
 npm run dist       # build an installer for the current OS into release/
 ```
 
+`npm install` also downloads the Electron binary for your OS (`postinstall`).
+
+**Windows:** if that step fails with `Cannot find native binding`, install the Microsoft Visual C++ Redistributable (`winget install Microsoft.VCRedist.2015+.x64`), then run `npx install-electron`.
+
 ## Distribution (zero cost)
 
 Releases are built by GitHub Actions on free runners: push a tag matching the version in `package.json` (e.g. `git tag v0.1.0 && git push origin v0.1.0`) and installers for Windows, macOS (Apple Silicon) and Linux are attached to a draft GitHub Release. No paid services or certificates are used, so the first launch needs one extra step:
