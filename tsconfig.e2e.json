@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    // Tests run code both in Node and, via page.evaluate, in the renderer.
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["e2e/**/*"]
+}
