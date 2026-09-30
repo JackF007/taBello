@@ -10,7 +10,7 @@ const Footer = () => {
   }, []);
 
   return (
-    <footer className="border-t py-4 px-6 text-xs text-muted-foreground text-center">
+    <footer className="py-5 px-6 text-xs text-muted-foreground text-center">
       TaBello{appInfo && ` v${appInfo.version}`} · open source · runs 100% on your computer
     </footer>
   );
