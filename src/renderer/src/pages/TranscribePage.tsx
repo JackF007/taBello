@@ -39,7 +39,7 @@ const SENSITIVITY_LABELS: Record<Sensitivity, string> = {
 const STEPS = [
   { icon: FileAudio, color: 'var(--gh-green)', title: 'Open a recording', text: 'Any audio or video file: a lesson, a live video, a demo you recorded.' },
   { icon: AudioWaveform, color: 'var(--gh-yellow)', title: 'Local AI transcription', text: "Spotify's Basic Pitch model detects the notes on your own computer." },
-  { icon: Music, color: 'var(--gh-blue)', title: 'Read, play, export', text: 'Tabs and sheet music you can play along with and export to Guitar Pro or MIDI.' },
+  { icon: Music, color: 'var(--gh-blue)', title: 'Read, play, export', text: 'Tabs you can play along with and export to Guitar Pro or MIDI.' },
 ];
 
 const TranscribePage = () => {
@@ -92,7 +92,7 @@ const TranscribePage = () => {
             into <span className="text-fire">tabs &amp; sheet music</span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-lg">
-            Guitar, bass, piano, violin or accordion: TaBello listens and writes it down, entirely on your computer. Nothing is
+            Guitar, bass or ukulele: TaBello listens and writes the tab, capo included, entirely on your computer. Nothing is
             uploaded.
           </p>
         </div>

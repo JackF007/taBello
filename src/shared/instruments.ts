@@ -1,33 +1,23 @@
 // Instrument presets, shared by the transcription worker (frequency range)
-// and the renderer (arrangement, notation, colors).
+// and the renderer (fingering, notation, colors). Every instrument is fretted and written as tablature.
 
-export type InstrumentId = 'guitar' | 'bass' | 'piano' | 'violin' | 'accordion';
-
-/**
- * How the instrument is written:
- * - `tab`: standard notation + tablature, notes placed on strings/frets (guitar, bass);
- * - `grand`: two staves, treble and bass clef (piano, accordion);
- * - `treble`: a single treble-clef staff (violin).
- */
-export type NotationKind = 'tab' | 'grand' | 'treble';
+export type InstrumentId = 'guitar' | 'bass' | 'ukulele';
 
 export interface Tuning {
   id: string;
   name: string;
-  /** Open-string MIDI pitches, lowest string first (empty for keyboard instruments). */
+  /**
+   * Open-string MIDI pitches in physical order, from the string nearest your face to the one nearest
+   * the floor (6th → 1st on a guitar). Usually ascending, but not always: the ukulele's re-entrant
+   * G string is higher than the C next to it.
+   */
   strings: number[];
 }
 
 export interface Instrument {
   id: InstrumentId;
   name: string;
-  notation: NotationKind;
-  /** Fret count, for `tab` instruments. */
   frets: number;
-  /** Playable MIDI range; detected notes outside it are moved by octaves. */
-  range: [lowest: number, highest: number];
-  /** Maximum simultaneous notes; the quietest extra notes are dropped. */
-  maxPolyphony: number;
   /** Frequency window handed to Basic Pitch; notes outside it are ignored. */
   minHz: number;
   maxHz: number;
@@ -39,16 +29,11 @@ export interface Instrument {
   tunings: Tuning[];
 }
 
-const NO_TUNING: Tuning[] = [{ id: 'standard', name: 'Standard', strings: [] }];
-
 export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
   guitar: {
     id: 'guitar',
     name: 'Guitar',
-    notation: 'tab',
     frets: 22,
-    range: [38, 86],
-    maxPolyphony: 6,
     minHz: 70,
     maxHz: 1400,
     alphaTexInstrument: 'acousticguitarsteel',
@@ -66,10 +51,7 @@ export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
   bass: {
     id: 'bass',
     name: 'Bass',
-    notation: 'tab',
     frets: 20,
-    range: [23, 63],
-    maxPolyphony: 4,
     minHz: 29,
     maxHz: 450,
     alphaTexInstrument: 'electricbassfinger',
@@ -82,48 +64,22 @@ export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
       { id: 'five-string', name: '5-string (B E A D G)', strings: [23, 28, 33, 38, 43] },
     ],
   },
-  piano: {
-    id: 'piano',
-    name: 'Piano',
-    notation: 'grand',
-    frets: 0,
-    range: [21, 108],
-    maxPolyphony: 10,
-    minHz: 27,
-    maxHz: 4200,
-    alphaTexInstrument: 'acousticgrandpiano',
-    midiProgram: 0,
+  ukulele: {
+    id: 'ukulele',
+    name: 'Ukulele',
+    frets: 15,
+    minHz: 140,
+    maxHz: 1400,
+    // General MIDI has no ukulele; the nylon-string guitar is the closest sound.
+    alphaTexInstrument: 'acousticguitarnylon',
+    midiProgram: 24,
     color: '#ffd600',
-    tunings: NO_TUNING,
-  },
-  violin: {
-    id: 'violin',
-    name: 'Violin',
-    notation: 'treble',
-    frets: 0,
-    range: [55, 100],
-    // Double stops at most.
-    maxPolyphony: 2,
-    minHz: 185,
-    maxHz: 3600,
-    alphaTexInstrument: 'violin',
-    midiProgram: 40,
-    color: '#ff3355',
-    tunings: [{ id: 'standard', name: 'Standard (G D A E)', strings: [55, 62, 69, 76] }],
-  },
-  accordion: {
-    id: 'accordion',
-    name: 'Accordion',
-    notation: 'grand',
-    frets: 0,
-    range: [28, 96],
-    maxPolyphony: 8,
-    minHz: 40,
-    maxHz: 2100,
-    alphaTexInstrument: 'accordion',
-    midiProgram: 21,
-    color: '#ff8a1f',
-    tunings: NO_TUNING,
+    tunings: [
+      { id: 'standard', name: 'Standard, high G (G C E A)', strings: [67, 60, 64, 69] },
+      { id: 'low-g', name: 'Low G (G C E A)', strings: [55, 60, 64, 69] },
+      { id: 'd-tuning', name: 'D tuning (A D F♯ B)', strings: [69, 62, 66, 71] },
+      { id: 'baritone', name: 'Baritone (D G B E)', strings: [50, 55, 59, 64] },
+    ],
   },
 };
 
