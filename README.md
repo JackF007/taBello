@@ -1,69 +1,65 @@
-# Welcome to your Lovable project
+# TaBello
 
-## Project info
+**TaBello** is an open-source, offline-first desktop application that turns video and audio files into musical notation and guitar/bass tablature — automatically, and entirely on your own computer.
 
-**URL**: https://lovable.dev/projects/9cde18e7-8919-48a1-ac1e-34eb6e80453a
+Drop in an `.mp4`, `.mov`, `.mp3`, `.wav` (or any format FFmpeg understands), and TaBello will:
 
-## How can I edit this code?
+1. Extract the audio track locally with a bundled FFmpeg binary.
+2. Transcribe the notes with a machine-learning pitch-detection model running on your machine.
+3. Map the detected notes onto strings and frets.
+4. Render standard notation and tablature you can read, play back, and export.
 
-There are several ways of editing your application.
+## Principles
 
-**Use Lovable**
+- **100% local.** No servers, no cloud APIs, no accounts. Your files never leave your machine.
+- **Offline-first.** Everything the app needs (FFmpeg, the ML model, fonts, soundfonts) ships inside the installer.
+- **Open source.** Free to use, study, and improve.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/9cde18e7-8919-48a1-ac1e-34eb6e80453a) and start prompting.
+## Tech Stack
 
-Changes made via Lovable will be committed automatically to this repo.
+| Layer | Technology | Purpose |
+| --- | --- | --- |
+| Desktop shell | [Electron](https://www.electronjs.org/) | Cross-platform desktop app (Windows, macOS, Linux) |
+| Build tooling | [electron-vite](https://electron-vite.org/) + [Vite](https://vite.dev/) | Bundles the main, preload, and renderer processes |
+| Packaging | [electron-builder](https://www.electron.build/) | Produces installers for each platform |
+| Language | TypeScript | Across main, preload, and renderer |
+| UI | React, Tailwind CSS, [shadcn/ui](https://ui.shadcn.com/) (Radix UI), lucide-react | Renderer (frontend) |
+| Audio extraction | [`ffmpeg-static`](https://github.com/eugeneware/ffmpeg-static) + [`fluent-ffmpeg`](https://github.com/fluent-ffmpeg/node-fluent-ffmpeg) | Bundled FFmpeg binary; decodes any audio/video file to 22.05 kHz mono PCM |
+| AI transcription | [`@spotify/basic-pitch`](https://github.com/spotify/basic-pitch-ts) | Polyphonic note detection (model bundled locally) |
+| ML runtime | [TensorFlow.js](https://www.tensorflow.org/js) — `@tensorflow/tfjs-node` (WASM backend as fallback) | Runs the Basic Pitch model on the local CPU |
+| Note model / MIDI | [`@tonejs/midi`](https://github.com/Tonejs/Midi) | Canonical note representation and MIDI import/export |
+| Notation & tabs | [alphaTab](https://alphatab.net/) (`@coderline/alphatab`) | Renders standard notation + tablature, with built-in playback |
+| Local storage | Node.js `fs` in the app's user-data directory | Saves projects, transcriptions, and exports on disk |
 
-**Use your preferred IDE**
+### Architecture at a glance
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```
+┌──────────────────────────── Renderer (React) ────────────────────────────┐
+│  File picker / drag & drop · progress UI · alphaTab score + tab viewer   │
+└───────────────▲──────────────────────────────────────────────┬───────────┘
+                │ window.tabello.* (typed API via contextBridge)│
+┌───────────────┴──────────────── Preload ─────────────────────▼───────────┐
+│  Exposes a minimal, whitelisted IPC surface — no Node.js in the renderer │
+└───────────────▲──────────────────────────────────────────────┬───────────┘
+                │ ipcRenderer.invoke / events                   │
+┌───────────────┴───────────────── Main process ───────────────▼───────────┐
+│  Dialogs · file system · job orchestration · FFmpeg audio extraction     │
+│        └── utilityProcess: Basic Pitch + TensorFlow.js inference         │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Edit a file directly in GitHub**
+## Project Status
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Early development. The project is being migrated from a web prototype to the local-first Electron architecture described above.
 
-**Use GitHub Codespaces**
+## How to run
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+_Coming soon._
 
-## What technologies are used for this project?
+## Contributing
 
-This project is built with .
+Contributions, issues, and ideas are welcome. Please open an issue to discuss larger changes before submitting a pull request.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## License
 
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/9cde18e7-8919-48a1-ac1e-34eb6e80453a) and click on Share -> Publish.
-
-## I want to use a custom domain - is that possible?
-
-We don't support custom domains (yet). If you want to deploy your project under your own domain then we recommend using Netlify. Visit our docs for more details: [Custom domains](https://docs.lovable.dev/tips-tricks/custom-domain/)
+To be defined. Note that the bundled FFmpeg binary (`ffmpeg-static`) is distributed under the GPL, which must be taken into account when choosing the project license.
