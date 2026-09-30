@@ -3,6 +3,11 @@
   "productName": "TaBello",
   "version": "0.1.0",
   "description": "Offline-first desktop app that turns audio and video into notation and tablature.",
+  "author": "TaBello contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JackF007/taBello.git"
+  },
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
@@ -10,10 +15,15 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.e2e.json",
     "lint": "eslint .",
-    "dist": "electron-vite build && electron-builder",
-    "dist:dir": "electron-vite build && electron-builder --dir"
+    "dist": "electron-vite build && electron-builder --publish never",
+    "dist:dir": "electron-vite build && electron-builder --dir --publish never",
+    "test": "vitest run",
+    "test:e2e": "electron-vite build && playwright test"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0"
   },
   "devDependencies": {
     "@coderline/alphatab": "^1.8.4",
@@ -21,6 +31,7 @@
     "@eslint/js": "^9.9.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@hookform/resolvers": "^3.9.0",
+    "@playwright/test": "^1.63.0",
     "@radix-ui/react-accordion": "^1.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.1",
     "@radix-ui/react-aspect-ratio": "^1.1.0",
@@ -48,8 +59,14 @@
     "@radix-ui/react-toggle": "^1.1.0",
     "@radix-ui/react-toggle-group": "^1.1.0",
     "@radix-ui/react-tooltip": "^1.1.4",
+    "@spotify/basic-pitch": "^1.0.1",
     "@tailwindcss/typography": "^0.5.15",
     "@tanstack/react-query": "^5.56.2",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "@tensorflow/tfjs-converter": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
+    "@tonejs/midi": "^2.0.28",
     "@types/node": "^22.5.5",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
@@ -86,6 +103,10 @@
     "typescript-eslint": "^8.0.1",
     "vaul": "^0.9.3",
     "vite": "^7.3.6",
+    "vitest": "^3.2.7",
     "zod": "^3.23.8"
+  },
+  "overrides": {
+    "@tensorflow/tfjs": "$@tensorflow/tfjs"
   }
 }

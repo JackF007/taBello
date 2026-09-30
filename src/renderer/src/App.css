@@ -63,3 +63,22 @@ body {
   color: white !important;
 }
 
+
+/* alphaTab playback cursor and highlighting */
+.at-cursor-bar {
+  background: rgba(121, 126, 186, 0.12);
+}
+
+.at-cursor-beat {
+  background: rgba(90, 85, 143, 0.8);
+  width: 3px;
+}
+
+.at-selection div {
+  background: rgba(121, 126, 186, 0.15);
+}
+
+.at-highlight * {
+  fill: #5a558f;
+  stroke: #5a558f;
+}

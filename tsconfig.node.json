@@ -5,6 +5,7 @@
     "module": "ESNext",
     "types": ["node"],
     "skipLibCheck": true,
+    "esModuleInterop": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -18,5 +19,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
+  "include": ["electron.vite.config.ts", "vitest.config.ts", "playwright.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
 }
