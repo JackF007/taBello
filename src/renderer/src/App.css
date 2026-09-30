@@ -1,84 +1,19 @@
-
-/* Glassmorphism effect */
-.glassmorphism {
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.dark .glassmorphism {
-  background: rgba(17, 24, 39, 0.8);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Animations for audio visualizer */
-@keyframes wave {
-  0%, 100% {
-    transform: scaleY(0.2);
-  }
-  50% {
-    transform: scaleY(1);
-  }
-}
-
-.animate-wave1 {
-  animation: wave 1.2s ease-in-out infinite;
-}
-
-.animate-wave2 {
-  animation: wave 1.2s ease-in-out infinite 0.1s;
-}
-
-.animate-wave3 {
-  animation: wave 1.2s ease-in-out infinite 0.2s;
-}
-
-.animate-wave4 {
-  animation: wave 1.2s ease-in-out infinite 0.3s;
-}
-
-.animate-wave5 {
-  animation: wave 1.2s ease-in-out infinite 0.4s;
-}
-
-/* Fix for white screen in preview */
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-}
-
-.text-tabello-700 {
-  color: hsl(var(--primary));
-}
-
-.bg-tabello-700 {
-  background-color: hsl(var(--primary));
-}
-
-/* Ensure proper contrast in all color modes */
-.text-white {
-  color: white !important;
-}
-
-
-/* alphaTab playback cursor and highlighting */
+/* alphaTab playback cursor and highlighting, tuned for the dark score. */
 .at-cursor-bar {
-  background: rgba(121, 126, 186, 0.12);
+  background: rgb(255 138 31 / 0.1);
 }
 
 .at-cursor-beat {
-  background: rgba(90, 85, 143, 0.8);
+  background: var(--gh-orange);
   width: 3px;
+  box-shadow: 0 0 12px var(--gh-orange);
 }
 
 .at-selection div {
-  background: rgba(121, 126, 186, 0.15);
+  background: rgb(46 155 255 / 0.15);
 }
 
 .at-highlight * {
-  fill: #5a558f;
-  stroke: #5a558f;
+  fill: var(--gh-orange);
+  stroke: var(--gh-orange);
 }
