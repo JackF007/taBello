@@ -24,6 +24,7 @@ const App = () => (
       <Sonner />
       <HashRouter>
         <div className="flex flex-col min-h-screen">
+          <div className="stage-lights" aria-hidden="true" />
           <Header />
           {!tabello && (
             <p role="alert" className="bg-destructive/10 text-destructive text-sm text-center py-2">
