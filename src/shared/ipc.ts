@@ -69,6 +69,8 @@ export interface ProjectSettings {
   tuningId: string;
   /** User-chosen tempo in BPM; null means "use the detected tempo". */
   tempo: number | null;
+  /** Capo fret for guitar/bass (0 = none); null means "use the detected capo". */
+  capo: number | null;
 }
 
 export interface ProjectSummary {

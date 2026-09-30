@@ -50,8 +50,9 @@ const UploadSection = ({ onFileSelected, disabled = false }: UploadSectionProps)
         handleDrag(e, false);
         processFile(e.dataTransfer.files[0]);
       }}
-      className={`rounded-xl border-2 border-dashed p-10 flex flex-col items-center justify-center text-center transition-colors
-        ${isDragging ? 'border-tabello-600 bg-tabello-50' : 'border-gray-300 hover:border-tabello-400'}
+      data-active={isDragging}
+      className={`neon-border rounded-2xl bg-card/70 p-10 flex flex-col items-center justify-center text-center transition-transform duration-200
+        ${isDragging ? 'scale-[1.01]' : ''}
         ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
     >
       <input
@@ -66,10 +67,12 @@ const UploadSection = ({ onFileSelected, disabled = false }: UploadSectionProps)
         id="file-upload"
         disabled={disabled}
       />
-      <Upload className="h-10 w-10 mb-3 text-tabello-600" />
-      <h3 className="text-base font-medium">Drop an audio or video file here</h3>
+      <span className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary transition-transform duration-300 ${isDragging ? 'scale-110 -translate-y-1' : ''}`}>
+        <Upload className="h-7 w-7 text-gh-orange" />
+      </span>
+      <h3 className="text-lg font-semibold">{isDragging ? 'Drop it like it’s hot' : 'Drop an audio or video file here'}</h3>
       <p className="mt-1 text-sm text-muted-foreground">MP3, WAV, FLAC, M4A, MP4, MOV, MKV… up to 15 minutes</p>
-      <Button className="mt-5" onClick={() => fileInputRef.current?.click()} disabled={disabled}>
+      <Button className="btn-fire mt-6 h-11 rounded-full px-8 text-base" onClick={() => fileInputRef.current?.click()} disabled={disabled}>
         Choose file
       </Button>
     </div>

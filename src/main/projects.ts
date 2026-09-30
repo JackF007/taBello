@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { NoteEvent, Project, ProjectSettings, ProjectSummary } from '../shared/ipc';
-import { INSTRUMENTS, isInstrumentId, type InstrumentId } from '../shared/instruments';
+import { INSTRUMENTS, isInstrumentId, MAX_CAPO, type InstrumentId } from '../shared/instruments';
 
 interface StoredMeta extends ProjectSummary {
   schemaVersion: 1;
@@ -32,7 +32,9 @@ async function writeJsonAtomic(file: string, data: unknown): Promise<void> {
 async function readMeta(dir: string): Promise<StoredMeta | null> {
   try {
     const meta = JSON.parse(await readFile(path.join(dir, 'meta.json'), 'utf8')) as StoredMeta;
-    return meta.schemaVersion === 1 ? meta : null;
+    if (meta.schemaVersion !== 1) return null;
+    // Projects saved before the capo setting existed default to automatic detection.
+    return { ...meta, settings: { ...meta.settings, capo: meta.settings.capo ?? null } };
   } catch {
     return null;
   }
@@ -44,11 +46,12 @@ function toSummary({ schemaVersion: _version, sourcePath: _path, ...summary }: S
 
 export function isValidSettings(value: unknown): value is ProjectSettings {
   if (typeof value !== 'object' || value === null) return false;
-  const { instrument, tuningId, tempo } = value as Record<string, unknown>;
+  const { instrument, tuningId, tempo, capo } = value as Record<string, unknown>;
   return (
     isInstrumentId(instrument) &&
     INSTRUMENTS[instrument].tunings.some((t) => t.id === tuningId) &&
-    (tempo === null || (typeof tempo === 'number' && Number.isFinite(tempo) && tempo >= 20 && tempo <= 400))
+    (tempo === null || (typeof tempo === 'number' && Number.isFinite(tempo) && tempo >= 20 && tempo <= 400)) &&
+    (capo === null || (Number.isInteger(capo) && (capo as number) >= 0 && (capo as number) <= MAX_CAPO))
   );
 }
 
@@ -74,7 +77,7 @@ export async function createProject(input: {
     sourcePath: input.sourcePath,
     durationSeconds: input.durationSeconds,
     noteCount: input.notes.length,
-    settings: { instrument: input.instrument, tuningId: INSTRUMENTS[input.instrument].tunings[0].id, tempo: null },
+    settings: { instrument: input.instrument, tuningId: INSTRUMENTS[input.instrument].tunings[0].id, tempo: null, capo: null },
   };
   await writeJsonAtomic(path.join(dir, 'notes.json'), input.notes);
   await writeJsonAtomic(path.join(dir, 'meta.json'), meta);

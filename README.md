@@ -12,10 +12,12 @@ Drop in an `.mp4`, `.mov`, `.mp3`, `.wav` (or any format FFmpeg understands), an
 ## Features
 
 - **Any audio or video file** up to 15 minutes, via drag & drop or the file picker.
-- **Guitar and bass**, with common tunings (standard, drop D, half step down, D standard, DADGAD, open G, 5-string bass…).
+- **Five instruments**: guitar and bass (notation + tablature, common tunings), piano and accordion (grand staff), violin (treble staff).
+- **Capo detection** for guitar: open-position shapes played higher up the neck are recognized, and the tab is written relative to the capo (adjustable by hand).
 - **Automatic tempo and key detection**; the tempo can be halved, doubled or typed in, and the score updates instantly.
 - **Playable fingerings**: notes are placed on strings/frets by an optimizer that keeps chord shapes compact and hand movement small.
-- **Notation + tablature** rendered with alphaTab, with synthesized playback, a cursor, a metronome and slow-down.
+- **Notation + tablature** rendered with alphaTab, with synthesized playback, a cursor, a metronome and slow-down; tab numbers are colored by string.
+- **Stage-style design**: a dark theme with the Guitar Hero fret colors and animations (disabled automatically when the system asks for reduced motion).
 - **Original recording** (audio or video) playable next to the score.
 - **Export** to Guitar Pro 7 (`.gp`, opens in Guitar Pro, MuseScore, TuxGuitar), MIDI (`.mid`) and alphaTex.
 - **Local library** of all transcriptions, stored in the app's data folder.

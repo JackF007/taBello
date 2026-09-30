@@ -40,6 +40,8 @@ test('transcribes a video into a playable, exportable score', async () => {
 
   await expect(page.getByRole('heading', { name: 'arpeggio' })).toBeVisible();
   await expect(page.locator('label:has-text("Key") + p')).toHaveText('C major');
+  // Guitar gets tuning and capo controls; a pure arpeggio needs no capo.
+  await expect(page.locator('#capo')).toContainText('Auto (none)');
   await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 30_000 });
   await expect(page.locator('.at-surface > *').first()).toBeAttached();
 
@@ -76,6 +78,19 @@ test('lists and deletes projects in the library', async () => {
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByText('No transcriptions yet')).toBeVisible();
   expect(readdirSync(path.join(dir, 'user-data', 'projects'))).toHaveLength(0);
+});
+
+test('writes piano parts on a grand staff', async () => {
+  await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
+  await page.getByRole('radio', { name: 'Piano' }).click();
+  await page.setInputFiles('#file-upload', path.join(dir, 'arpeggio.mp4'));
+  await page.waitForURL(/#\/project\//, { timeout: 60_000 });
+
+  await expect(page.locator('#instrument')).toContainText('Piano');
+  // No strings, so no tuning or capo.
+  await expect(page.locator('#tuning')).toHaveCount(0);
+  await expect(page.locator('#capo')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 30_000 });
 });
 
 test('cancels a running transcription', async () => {
