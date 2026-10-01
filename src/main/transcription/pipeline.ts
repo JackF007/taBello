@@ -9,6 +9,7 @@ import { loadGraphModel } from '@tensorflow/tfjs-converter';
 import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
 import type { ErrorCode, NoteEvent, Sensitivity } from '../../shared/ipc';
 import { MAX_DURATION_SECONDS } from '../../shared/ipc';
+import { analyzeArticulation, mergeBends, packContour, transientEnvelope } from './articulation';
 
 /** Basic Pitch expects mono audio at this rate. */
 export const SAMPLE_RATE = 22050;
@@ -171,7 +172,12 @@ export function mergeRetriggeredNotes(notes: NoteEvent[]): NoteEvent[] {
   for (const note of [...notes].sort((a, b) => a.start - b.start)) {
     const previous = lastByPitch.get(note.pitch);
     const contiguous = previous && Math.abs(note.start - (previous.start + previous.duration)) < 0.05;
-    if (previous && contiguous && note.velocity < previous.velocity * 0.9) {
+    // Weaker in loudness, or without a new attack (when the attack is known).
+    const weaker =
+      previous !== undefined &&
+      (note.velocity < previous.velocity * 0.9 ||
+        (note.attack !== undefined && previous.attack !== undefined && note.attack < 0.3 && note.attack < previous.attack * 0.5));
+    if (previous && contiguous && weaker) {
       previous.duration = Number((note.start + note.duration - previous.start).toFixed(4));
       continue;
     }
@@ -209,12 +215,14 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
   const basicPitch = new BasicPitch(loadModel(options.assets.modelDir) as unknown as ConstructorParameters<typeof BasicPitch>[0]);
   const frames: number[][] = [];
   const onsets: number[][] = [];
-  // Contours (pitch bends) are not used, so they are not kept in memory.
+  // Pitch contours (3 bins per semitone) reveal bends, slides and vibrato; bytes are precise enough.
+  const contours: Uint8Array[] = [];
   await basicPitch.evaluateModel(
     audio,
-    (f, o) => {
+    (f, o, c) => {
       for (const row of f) frames.push(row);
       for (const row of o) onsets.push(row);
+      for (const row of c) contours.push(packContour(row));
     },
     (fraction) => options.onProgress?.(fraction),
   );
@@ -222,13 +230,15 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
   const { onset, frame } = THRESHOLDS[options.sensitivity ?? 'normal'];
   const events = outputToNotesPoly(frames, onsets, onset, frame, MIN_NOTE_FRAMES, true, options.maxHz, options.minHz);
   const round = (value: number, digits: number) => Number(value.toFixed(digits));
+  const context = { onsets, contours, transients: transientEnvelope(audio) };
   const notes = noteFramesToTime(events)
-    .map((note) => ({
+    .map((note, i) => ({
       start: round(note.startTimeSeconds, 4),
       duration: round(note.durationSeconds, 4),
       pitch: note.pitchMidi,
       velocity: round(note.amplitude, 3),
+      ...analyzeArticulation(events[i], note.startTimeSeconds, context),
     }))
     .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
-  return mergeRetriggeredNotes(removeHarmonics(notes));
+  return mergeBends(mergeRetriggeredNotes(removeHarmonics(notes)));
 }

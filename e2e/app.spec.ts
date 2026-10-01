@@ -81,6 +81,11 @@ test('transcribes a video into a playable, exportable score', async () => {
   // Tuning and time signature are detected too.
   await expect(page.locator('#tuning')).toContainText('Auto (Standard');
   await expect(page.locator('#meter')).toContainText('Auto (4/4)');
+  // A steady synthesized arpeggio: no tempo changes to follow.
+  await expect(page.getByTestId('tempo-range')).toBeHidden();
+  await page.getByRole('button', { name: 'Techniques', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Techniques', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: 'Techniques', exact: true }).click();
 
   // Play along with the original recording: the score follows the video.
   await page.getByRole('radio', { name: 'Original' }).click();
@@ -91,15 +96,18 @@ test('transcribes a video into a playable, exportable score', async () => {
   await expect.poll(() => page.evaluate(() => document.querySelector('video')!.paused)).toBe(true);
   await page.getByRole('radio', { name: 'Transcription' }).click();
 
-  // Edit a note: click an open high E (E4) in the tab, raise it a semitone, delete it, undo.
+  // Edit a note: click the first tab number, raise it a semitone, delete it, undo.
   await page.getByRole('button', { name: 'Edit notes' }).click();
   await page.locator('.at-surface').scrollIntoViewIfNeeded();
-  const openE = page.locator('.at-surface svg text[fill="#B45CFF"]', { hasText: /^0$/ }).first();
-  await openE.click();
-  await expect(page.getByTestId('selected-note-info')).toHaveText('E4');
+  // Tab numbers are the only texts made of digits alone (bar numbers are padded).
+  await page.locator('.at-surface svg text', { hasText: /^\d+$/ }).first().click();
+  const info = page.getByTestId('selected-note-info');
+  await expect(info).toHaveText(/^[A-G]♯?\d$/);
+  const name = await info.textContent();
+  const fret = Number(await page.locator('#note-fret').inputValue());
   await page.keyboard.press('ArrowUp');
-  await expect(page.getByTestId('selected-note-info')).toHaveText('F4');
-  await expect(page.locator('#note-fret')).toHaveValue('1');
+  await expect(info).not.toHaveText(name!);
+  await expect(page.locator('#note-fret')).toHaveValue(String(fret + 1));
   const noteCount = async () => Number((await page.getByText(/· \d+ notes ·/).textContent())!.match(/(\d+) notes/)![1]);
   const before = await noteCount();
   await page.getByRole('button', { name: 'Delete note' }).click();

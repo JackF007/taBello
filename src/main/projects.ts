@@ -56,6 +56,8 @@ function normalizeSettings(settings: Partial<ProjectSettings>): ProjectSettings 
     capo: sameInstrument ? (settings.capo ?? null) : null,
     meter: isMeterId(settings.meter) ? settings.meter : null,
     chords: settings.chords ?? true,
+    techniques: settings.techniques ?? true,
+    tempoChanges: settings.tempoChanges ?? true,
   };
 }
 
@@ -65,14 +67,16 @@ function toSummary({ schemaVersion: _version, sourcePath: _path, ...summary }: S
 
 export function isValidSettings(value: unknown): value is ProjectSettings {
   if (typeof value !== 'object' || value === null) return false;
-  const { instrument, tuningId, tempo, capo, meter, chords } = value as Record<string, unknown>;
+  const { instrument, tuningId, tempo, capo, meter, chords, techniques, tempoChanges } = value as Record<string, unknown>;
   return (
     isInstrumentId(instrument) &&
     (tuningId === null || INSTRUMENTS[instrument].tunings.some((t) => t.id === tuningId)) &&
     (tempo === null || (typeof tempo === 'number' && Number.isFinite(tempo) && tempo >= 20 && tempo <= 400)) &&
     (capo === null || (Number.isInteger(capo) && (capo as number) >= 0 && (capo as number) <= MAX_CAPO)) &&
     (meter === null || isMeterId(meter)) &&
-    typeof chords === 'boolean'
+    typeof chords === 'boolean' &&
+    typeof techniques === 'boolean' &&
+    typeof tempoChanges === 'boolean'
   );
 }
 
@@ -85,8 +89,16 @@ export function isValidNotes(value: unknown): value is NoteEvent[] {
     value.length <= MAX_NOTES &&
     value.every((note: unknown) => {
       if (typeof note !== 'object' || note === null) return false;
-      const { start, duration, pitch, velocity, string } = note as Record<string, unknown>;
+      const { start, duration, pitch, velocity, string, attack, bend, release, slideIn, slideOut, vibrato } = note as Record<string, unknown>;
+      const optional = (value: unknown, valid: (v: unknown) => boolean) => value === undefined || valid(value);
+      const isBoolean = (v: unknown) => typeof v === 'boolean';
       return (
+        optional(attack, (v) => isFiniteNumber(v, 0, 1)) &&
+        optional(bend, (v) => isFiniteNumber(v, 0, 4)) &&
+        optional(slideIn, (v) => isFiniteNumber(v, -24, 24)) &&
+        optional(slideOut, (v) => isFiniteNumber(v, -24, 24)) &&
+        optional(release, isBoolean) &&
+        optional(vibrato, isBoolean) &&
         isFiniteNumber(start, 0, 24 * 3600) &&
         isFiniteNumber(duration, 0, 3600) &&
         Number.isInteger(pitch) &&
@@ -120,7 +132,7 @@ export async function createProject(input: {
     sourcePath: input.sourcePath,
     durationSeconds: input.durationSeconds,
     noteCount: input.notes.length,
-    settings: { instrument: input.instrument, tuningId: null, tempo: null, capo: null, meter: null, chords: true },
+    settings: { instrument: input.instrument, tuningId: null, tempo: null, capo: null, meter: null, chords: true, techniques: true, tempoChanges: true },
   };
   await writeJsonAtomic(path.join(dir, 'notes.json'), input.notes);
   await writeJsonAtomic(path.join(dir, 'meta.json'), meta);
