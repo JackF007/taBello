@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
 
+// Long-running accuracy benchmarks on external datasets (see benchmark/).
 export default defineConfig({
   resolve: {
     alias: {
@@ -9,7 +10,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'benchmark/**/*.test.ts'],
-    testTimeout: 60_000,
+    include: ['benchmark/**/*.benchmark.ts'],
+    testTimeout: 0,
   },
 });

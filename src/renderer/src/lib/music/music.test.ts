@@ -97,6 +97,13 @@ describe('arrange', () => {
     expect(Math.max(...jumps)).toBeLessThanOrEqual(5);
   });
 
+  it('keeps the hand in position across open strings', () => {
+    // C5 G4 (open E) C4 (open E) C5...: C4 could be the 1st fret of the B string, but the hand is up the neck.
+    const melody = [72, 67, 64, 60, 64, 72, 67, 64, 60, 64, 72].map((p, i) => note(i * 0.25, p, 0.25));
+    const fretted = bars(melody).flat().flatMap((b) => b.notes.filter((n) => n.fret > 0).map((n) => n.fret));
+    expect(Math.max(...fretted) - Math.min(...fretted)).toBeLessThanOrEqual(5);
+  });
+
   it('folds out-of-range pitches into the instrument range', () => {
     const [[beat]] = bars([note(0, 20, 2)], { ...at120, tuning: INSTRUMENTS.bass.tunings[0].strings, frets: 20 });
     expect(beat.notes[0].pitch).toBe(32);
