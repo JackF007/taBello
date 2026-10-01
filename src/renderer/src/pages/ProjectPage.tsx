@@ -375,78 +375,83 @@ const ProjectEditor = ({ project }: { project: Project }) => {
         </p>
       )}
 
-      <div className="panel flex flex-wrap items-center gap-3 px-4 py-3" role="toolbar" aria-label="Edit notes">
-        <Toggle
-          pressed={editing}
-          onPressedChange={(on) => {
-            setEditing(on);
-            setSelected(null);
-          }}
-          aria-label="Edit notes"
-          className="h-10 rounded-full px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
-        >
-          <Pencil className="h-4 w-4 mr-1" /> Edit notes
-        </Toggle>
-        {editing && !selectedNote && (
-          <span className="text-sm text-muted-foreground">Click a note in the score to change or delete it.</span>
-        )}
-        {editing && selected && selectedNote && (
-          <div className="flex flex-wrap items-center gap-3 text-sm" aria-label="Selected note">
-            <span className="font-display text-base" data-testid="selected-note-info">
-              {pitchName(selectedNote.pitch)}
-            </span>
-            <span className="text-muted-foreground">bar {selected.bar + 1}</span>
-            <Label htmlFor="note-fret" className="text-muted-foreground">Fret</Label>
-            <Input
-              key={`${selected.bar}-${selected.beat}-${selected.string}-${selectedNote.fret}`}
-              id="note-fret"
-              className="h-9 w-16"
-              type="number"
-              min={0}
-              max={instrument.frets - capo}
-              defaultValue={selectedNote.fret}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              onBlur={(e) => {
-                const fret = Number(e.currentTarget.value);
-                if (Number.isInteger(fret) && fret !== selectedNote.fret) edit({ type: 'fret', fret });
-              }}
-            />
-            <Label htmlFor="note-string" className="text-muted-foreground">String</Label>
-            <Select value={String(selected.string)} onValueChange={(value) => edit({ type: 'string', string: Number(value) })}>
-              <SelectTrigger id="note-string" className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {tuning.strings.map((open, string) => (
-                  <SelectItem key={string} value={String(string)}>
-                    {STRING_NAMES[tuning.strings.length - 1 - string] ?? `${tuning.strings.length - string}th`} ({pitchName(open + capo).replace(/\d+$/, '')})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm" onClick={() => edit({ type: 'pitch', delta: -1 })} title="Down a semitone (↓)">−½</Button>
-            <Button variant="outline" size="sm" onClick={() => edit({ type: 'pitch', delta: 1 })} title="Up a semitone (↑)">+½</Button>
-            <Button variant="outline" size="sm" onClick={() => edit({ type: 'delete' })} title="Delete (Del)" aria-label="Delete note">
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" disabled={history.length === 0} onClick={undo} title="Undo (Ctrl+Z)">
-            <Undo2 className="h-4 w-4 mr-1" /> Undo
-          </Button>
-          {edited && (
-            <Button variant="ghost" size="sm" onClick={() => void restoreDetected()} title="Discard all edits">
-              <RotateCcw className="h-4 w-4 mr-1" /> Restore detected notes
-            </Button>
-          )}
-        </div>
-      </div>
-
       <ScoreView
         tex={tex}
         media={media}
         mediaOffset={arrangement.startTime}
         onNoteClick={editing ? setSelected : undefined}
         selected={editing ? selected : null}
+        controls={
+          <Toggle
+            pressed={editing}
+            onPressedChange={(on) => {
+              setEditing(on);
+              setSelected(null);
+            }}
+            aria-label="Edit notes"
+            className="h-11 rounded-full px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+          >
+            <Pencil className="h-4 w-4 mr-1" /> Edit notes
+          </Toggle>
+        }
+        toolbar={
+          editing && (
+            <>
+              {!selectedNote && (
+                <span className="text-sm text-muted-foreground">Click a note in the score to change or delete it.</span>
+              )}
+              {selected && selectedNote && (
+                <div className="flex flex-wrap items-center gap-3 text-sm" aria-label="Selected note">
+                  <span className="font-display text-base" data-testid="selected-note-info">
+                    {pitchName(selectedNote.pitch)}
+                  </span>
+                  <span className="text-muted-foreground">bar {selected.bar + 1}</span>
+                  <Label htmlFor="note-fret" className="text-muted-foreground">Fret</Label>
+                  <Input
+                    key={`${selected.bar}-${selected.beat}-${selected.string}-${selectedNote.fret}`}
+                    id="note-fret"
+                    className="h-9 w-16"
+                    type="number"
+                    min={0}
+                    max={instrument.frets - capo}
+                    defaultValue={selectedNote.fret}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    onBlur={(e) => {
+                      const fret = Number(e.currentTarget.value);
+                      if (Number.isInteger(fret) && fret !== selectedNote.fret) edit({ type: 'fret', fret });
+                    }}
+                  />
+                  <Label htmlFor="note-string" className="text-muted-foreground">String</Label>
+                  <Select value={String(selected.string)} onValueChange={(value) => edit({ type: 'string', string: Number(value) })}>
+                    <SelectTrigger id="note-string" className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {tuning.strings.map((open, string) => (
+                        <SelectItem key={string} value={String(string)}>
+                          {STRING_NAMES[tuning.strings.length - 1 - string] ?? `${tuning.strings.length - string}th`} ({pitchName(open + capo).replace(/\d+$/, '')})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" size="sm" onClick={() => edit({ type: 'pitch', delta: -1 })} title="Down a semitone (↓)">−½</Button>
+                  <Button variant="outline" size="sm" onClick={() => edit({ type: 'pitch', delta: 1 })} title="Up a semitone (↑)">+½</Button>
+                  <Button variant="outline" size="sm" onClick={() => edit({ type: 'delete' })} title="Delete (Del)" aria-label="Delete note">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <Button variant="ghost" size="sm" disabled={history.length === 0} onClick={undo} title="Undo (Ctrl+Z)">
+                  <Undo2 className="h-4 w-4 mr-1" /> Undo
+                </Button>
+                {edited && (
+                  <Button variant="ghost" size="sm" onClick={() => void restoreDetected()} title="Discard all edits">
+                    <RotateCcw className="h-4 w-4 mr-1" /> Restore detected notes
+                  </Button>
+                )}
+              </div>
+            </>
+          )
+        }
       />
 
       <p className="text-xs text-muted-foreground">
