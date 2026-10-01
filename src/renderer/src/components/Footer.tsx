@@ -11,7 +11,7 @@ const Footer = () => {
 
   return (
     <footer className="py-5 px-6 text-xs text-muted-foreground text-center">
-      TaBello{appInfo && ` v${appInfo.version}`} · open source · runs 100% on your computer
+      TaBello{appInfo && ` v${appInfo.version}`} · free software (GPL-3.0) · runs 100% on your computer
     </footer>
   );
 };
