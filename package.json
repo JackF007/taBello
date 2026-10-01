@@ -27,6 +27,7 @@
     "dist:dir": "electron-vite build && electron-builder --dir --publish never",
     "test": "vitest run",
     "benchmark": "vitest run --config vitest.benchmark.config.ts",
+    "samples": "vite-node scripts/generate-samples.ts",
     "test:e2e": "electron-vite build && playwright test"
   },
   "dependencies": {
@@ -95,6 +96,7 @@
     "input-otp": "^1.2.4",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
+    "onnxruntime-web": "1.23.2",
     "postcss": "^8.4.47",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",

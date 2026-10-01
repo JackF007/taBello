@@ -29,8 +29,14 @@ connection needed: your files never leave your machine.
   passage and slow it down without changing its pitch.
 - **Edit the tab**: click a note to change its fret, string or pitch, or delete it; undo, or restore
   the detected notes at any time.
+- **Isolate the instrument from a band recording** (optional): Demucs, a state-of-the-art source
+  separation model, extracts the bass or guitar part before transcription — still on your computer.
+- **Sample tracks** to try it right away: famous public-domain pieces (Greensleeves, Romance, Minuet in
+  G, Ode to Joy, When the Saints Go Marching In) and a blues lick, played by TaBello's own synthesizer.
 - **Export** to Guitar Pro 7 (`.gp` — opens in Guitar Pro, MuseScore, TuxGuitar), MIDI (`.mid`) and alphaTex.
 - **Local library** of all your transcriptions.
+
+![Sample tracks](docs/screenshots/samples.png)
 
 | Capo and chords detected on a strummed part | Editing a ukulele tab |
 | --- | --- |
@@ -49,8 +55,9 @@ first launch of an installed copy needs one extra click:
 
 ## How to use it
 
-1. **Pick your instrument** (guitar, bass or ukulele).
-2. **Drop a file** or click *Choose file*. Most audio and video formats work (MP3, WAV, FLAC, M4A, MP4,
+1. **Pick your instrument** (guitar, bass or ukulele). For a full band recording, turn on **Isolate**
+   (the first time, TaBello offers to download the separation model, about 100 MB).
+2. **Drop a file** or click *Choose file* — or click **Try** on one of the sample tracks. Most audio and video formats work (MP3, WAV, FLAC, M4A, MP4,
    MOV, MKV…), up to 15 minutes. Transcription takes a few seconds per minute of audio.
 3. **Check the result** on the project page:
    - tuning, capo and time signature are detected (*Auto*); pick another value if a guess is wrong;
@@ -71,7 +78,10 @@ Keyboard: Space plays and pauses.
 Automatic transcription is a starting point, not a finished tab. Accuracy depends a lot on the recording:
 
 - **Solo instrument recordings work best.** In a full band mix, vocals, drums and keys are heard too
-  and produce extra or wrong notes.
+  and produce extra or wrong notes: turn on **Isolate**. On the bundled band sample, isolating the bass
+  raises the share of correct bass notes from 39% to 98%. Separation takes roughly as long as the song
+  (a few minutes on a laptop) and works best for bass; guitars are taken from Demucs' "other" part,
+  which also contains keyboards.
 - **Clean, close recordings beat distant or noisy ones.** Heavy distortion, reverb and effects make
   notes harder to detect.
 - **Choose the right instrument before transcribing**: it sets the frequency range the model listens to.
@@ -94,10 +104,15 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
   after exporting to Guitar Pro, MuseScore or TuxGuitar.
 - Very fast passages and dense chords can lose notes; overtones can occasionally add an octave note.
 - Tempo changes are followed when they are gradual or sustained; rubato and free-time passages are not.
+- Isolation is limited to recordings of up to 10 minutes. Its model is downloaded separately because
+  its weights are for personal and research use only (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
 ## How it works
 
-1. **FFmpeg** extracts the audio track and converts it to 22.05 kHz mono.
+1. **FFmpeg** extracts the audio track and converts it to 22.05 kHz mono. With *Isolate* on, it decodes
+   44.1 kHz stereo instead, and **[Demucs](https://github.com/facebookresearch/demucs)** (Hybrid
+   Transformer Demucs, run with ONNX Runtime's WebAssembly backend) separates the bass or the "other"
+   part (guitars) from vocals and drums first.
 2. **[Basic Pitch](https://github.com/spotify/basic-pitch-ts)**, Spotify's polyphonic note-detection model,
    runs locally with TensorFlow.js (WebAssembly backend) and lists the notes it hears.
 3. TaBello cleans the result: it removes quiet overtones and merges the phantom re-attacks the model
@@ -135,10 +150,14 @@ npm run dev        # start the app with hot reload
 | `npm run dev` | Run the app in development mode |
 | `npm test` | Unit and integration tests (includes a real FFmpeg + Basic Pitch run) |
 | `npm run benchmark` | Accuracy benchmark on [GuitarSet](#measuring-accuracy) |
+| `npm run samples` | Regenerate the sample tracks in `resources/samples/` from `scripts/samples/scores.ts` |
 | `npm run test:e2e` | Build, then drive the real app with Playwright |
 | `npm run lint` / `npm run typecheck` | ESLint / TypeScript checks |
 | `npm run build` | Production build into `out/` |
 | `npm run dist` | Build an installer for the current OS into `release/` |
+
+Tests that need the separation model are skipped unless you point `TABELLO_DEMUCS_MODEL` at an
+`htdemucs.onnx` file (e.g. the one the app downloaded into its data folder, under `models/`).
 
 If `npm install` fails on Windows with `Cannot find native binding`, install the Visual C++
 Redistributable (`winget install Microsoft.VCRedist.2015+.x64`) and run `npx install-electron`.
@@ -168,7 +187,8 @@ with Spotify Basic Pitch, alphaTab, @tonejs/midi, Vitest, Playwright and GitHub 
 │ app:// protocol (renderer + CSP) · tabello-media:// (original file,      │
 │ HTTP range requests) · save dialogs · job manager (one job, cancellable) │
 │        └── utilityProcess, one per job:                                  │
-│            FFmpeg → 22.05 kHz mono PCM → Basic Pitch (TF.js WASM)        │
+│            FFmpeg → [Demucs (ONNX Runtime WASM): isolate the instrument] │
+│            → 22.05 kHz mono PCM → Basic Pitch (TF.js WASM)               │
 │            → overtone filtering + re-attack merging → notes              │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -180,6 +200,7 @@ src/
 │   ├── ipc.ts            IPC handlers (validated)
 │   ├── protocols.ts      app:// and tabello-media:// schemes
 │   ├── projects.ts       local project library
+│   ├── separation/       Demucs source separation, model download/import
 │   └── transcription/    utility-process worker, FFmpeg + Basic Pitch pipeline
 ├── preload/              contextBridge API exposed as window.tabello
 ├── shared/               IPC contract and instrument/tuning presets
@@ -187,6 +208,7 @@ src/
     └── src/lib/music/    detection (tempo, key, meter, tuning, capo, chords), arrangement,
                           note editing, alphaTex/MIDI/GP export
 benchmark/                GuitarSet accuracy benchmark
+resources/samples/        sample tracks (generated by scripts/generate-samples.ts)
 e2e/                      Playwright tests of the desktop app
 ```
 
@@ -238,8 +260,9 @@ Ideas, roughly by priority — contributions welcome:
 - [x] Triplets, swing, 3/4 and 6/8
 - [x] Edit notes directly in the tab
 - [ ] Tune thresholds and fingering costs on GuitarSet
-- [ ] Optional source separation to isolate the guitar or bass from a full mix (Demucs via ONNX
+- [x] Optional source separation to isolate the guitar or bass from a full mix (Demucs via ONNX
   Runtime, model downloaded on demand)
+- [ ] A dedicated guitar stem (Demucs 6-source model) and GPU acceleration (WebGPU/DirectML)
 - [ ] Detect recordings tuned off A = 440 Hz (e.g. 432 Hz) from pitch bends
 - [x] Write techniques: bends, slides, hammer-ons, pull-offs, vibrato (experimental)
 - [x] Tempo changes within a piece

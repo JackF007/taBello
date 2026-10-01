@@ -9,7 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'benchmark/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'benchmark/**/*.test.ts', 'scripts/**/*.test.ts'],
     testTimeout: 60_000,
   },
 });

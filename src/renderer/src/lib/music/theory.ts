@@ -121,6 +121,50 @@ function alignment(onsets: Onset[], period: number): { magnitude: number; phase:
  * a prior around 110 BPM to break ties between a tempo and its double. Half/double-tempo mistakes
  * remain possible, which is why the UI lets the user halve, double or type the tempo.
  */
+/**
+ * Detects a beat made of three evenly spaced notes (an arpeggio in triplets or in compound time),
+ * which the periodicity search reads as straight 8ths at 3/2 of the tempo. The notes' pitches decide:
+ * when the pattern repeats every three notes rather than every two, the beat is three notes long,
+ * and it falls on the note of each group with the highest top or the lowest bass.
+ */
+function compoundBeat(onsets: Onset[], bpm: number): TempoEstimate | null {
+  const eighth = 30 / bpm;
+  if (onsets.length < 18 || alignment(onsets, eighth).magnitude < 0.85) return null;
+  // Consecutive onsets one 8th apart, as a sequence of (top, bass) pitches.
+  const tops = onsets.map((o) => Math.max(...o.notes.map((n) => n.pitch)));
+  const basses = onsets.map((o) => Math.min(...o.notes.map((n) => n.pitch)));
+  const repeats = (lag: number) => {
+    let same = 0;
+    let total = 0;
+    for (let i = 0; i + lag < onsets.length; i++) {
+      if (Math.abs(onsets[i + lag].time - onsets[i].time - lag * eighth) > eighth / 3) continue;
+      total++;
+      if (tops[i + lag] === tops[i]) same++;
+    }
+    return total < 12 ? 0 : same / total;
+  };
+  const three = repeats(3);
+  if (three < 0.6 || three < repeats(2) + 0.3 || three < repeats(4) + 0.2) return null;
+
+  // Which note of each group is on the beat: count, for each position in the group, how often it
+  // holds the group's highest top or lowest bass.
+  const period = 3 * eighth;
+  const origin = onsets[0].time;
+  const votes = [0, 0, 0];
+  for (let i = 0; i + 2 < onsets.length; i += 1) {
+    const group = [i, i + 1, i + 2];
+    if (Math.abs(onsets[i + 2].time - onsets[i].time - 2 * eighth) > eighth / 3) continue;
+    const position = (k: number) => ((Math.round((onsets[k].time - origin) / eighth) % 3) + 3) % 3;
+    const top = group.reduce((a, b) => (tops[b] > tops[a] ? b : a));
+    const bass = group.reduce((a, b) => (basses[b] < basses[a] ? b : a));
+    votes[position(top)]++;
+    votes[position(bass)]++;
+  }
+  const beatPosition = votes.indexOf(Math.max(...votes));
+  const offset = (((origin + beatPosition * eighth) % period) + period) % period;
+  return { bpm: Math.round((bpm * 2) / 3 * 10) / 10, offset };
+}
+
 export function estimateTempo(notes: NoteEvent[]): TempoEstimate {
   const onsets = mergeOnsets(notes);
   if (onsets.length < 4) return { bpm: 120, offset: onsets[0]?.time ?? 0 };
@@ -146,9 +190,15 @@ export function estimateTempo(notes: NoteEvent[]): TempoEstimate {
     if (s > bestScore) [bestBpm, bestScore] = [bpm, s];
   }
 
+  // Notes grouped in threes (triplets, compound time) can also be heard as straight 8ths at 3/2 of
+  // the tempo; see compoundBeat.
+  const compound = compoundBeat(onsets, bestBpm);
+  if (compound) return compound;
+  const beatOnsets = onsets;
+
   const bpm = Math.round(bestBpm * 10) / 10;
   const period = 60 / bpm;
-  const phase = alignment(onsets, period).phase;
+  const phase = alignment(beatOnsets, period).phase;
   const offset = ((((phase / (2 * Math.PI)) * period) % period) + period) % period;
   return { bpm, offset };
 }
@@ -238,7 +288,7 @@ export function detectMeter(notes: NoteEvent[], tempo: TempoEstimate, beatTimes?
   };
   const three = accent(3);
   const four = accent(4);
-  if (!triplets && three.ratio > 1.3 && three.ratio > four.ratio * 1.15) return { meter: '3/4', barPhase: three.phase, offset };
+  if (three.ratio > 1.3 && three.ratio > four.ratio * 1.15) return { meter: triplets ? '3/4-triplets' : '3/4', barPhase: three.phase, offset };
   return { ...straight, barPhase: four.ratio > 1.2 ? four.phase : 0 };
 }
 

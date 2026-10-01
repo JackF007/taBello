@@ -248,6 +248,7 @@ const ProjectEditor = ({ project }: { project: Project }) => {
           <h1 className="text-3xl truncate">{project.title}</h1>
           <p className="text-sm text-muted-foreground">
             {project.sourceName} · {formatDuration(project.durationSeconds)} · {notes.length} notes · {formatDate(project.createdAt)}
+            {project.isolated && ` · ${instrument.name.toLowerCase()} isolated from the mix`}
           </p>
         </div>
         <DropdownMenu>

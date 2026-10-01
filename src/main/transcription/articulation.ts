@@ -69,12 +69,13 @@ export function packContour(row: number[]): Uint8Array {
 
 /**
  * Pitch deviation of a note from its nominal pitch, in semitones, frame by frame (null where the
- * contour is too weak). Nearby bins are favored, as Basic Pitch does, so neighbouring notes of a
- * chord do not pull the estimate.
+ * contour is too weak). The pitch is followed continuously from the note's own bin, at most 2 bins
+ * (⅔ semitone) per frame, so it cannot jump to another note of a chord; bends are slower than that.
  */
 export function pitchDeviation(contours: Uint8Array[], note: FrameNote): (number | null)[] {
   const center = BINS_PER_SEMITONE * (note.pitchMidi - 21);
   const out: (number | null)[] = [];
+  let bin: number | null = null;
   for (let f = note.startFrame; f < note.startFrame + note.durationFrames; f++) {
     const row = contours[f];
     if (!row) {
@@ -82,12 +83,26 @@ export function pitchDeviation(contours: Uint8Array[], note: FrameNote): (number
       continue;
     }
     let best = -1;
-    let bestBin = center;
-    for (let b = Math.max(0, center - TOLERANCE_BINS); b <= Math.min(row.length - 1, center + TOLERANCE_BINS); b++) {
-      const weighted = row[b] * Math.exp(-((b - center) ** 2) / (2 * 6 ** 2));
-      if (weighted > best) [best, bestBin] = [weighted, b];
+    let bestBin: number = bin ?? center;
+    if (bin === null) {
+      // Until the pitch is found: the strongest bin near the note, favouring its nominal pitch (a note
+      // can start a little off, e.g. slid into).
+      for (let b = Math.max(0, center - TOLERANCE_BINS); b <= Math.min(row.length - 1, center + TOLERANCE_BINS); b++) {
+        const weighted = row[b] * Math.exp(-((b - center) ** 2) / (2 * 6 ** 2));
+        if (weighted > best) [best, bestBin] = [weighted, b];
+      }
+      best = row[bestBin];
+    } else {
+      for (let b = Math.max(center - TOLERANCE_BINS, bin - 2); b <= Math.min(row.length - 1, center + TOLERANCE_BINS, bin + 2); b++) {
+        if (row[b] > best) [best, bestBin] = [row[b], b];
+      }
     }
-    out.push(row[bestBin] >= MIN_CONTOUR ? (bestBin - center) / BINS_PER_SEMITONE : null);
+    if (best >= MIN_CONTOUR) {
+      bin = bestBin;
+      out.push((bin - center) / BINS_PER_SEMITONE);
+    } else {
+      out.push(null);
+    }
   }
   return out;
 }
@@ -128,13 +143,11 @@ const median = (values: number[]) => {
 const round = (value: number, step: number) => Math.round(value / step) * step;
 
 export function analyzeArticulation(note: FrameNote, startSeconds: number, context: ArticulationContext): Articulation {
-  const { onsets, contours, transients } = context;
-  // Attack: Basic Pitch's onset activation fires on any sudden pitch change, so it is combined with
-  // the pluck click in the audio. Picked notes have both; hammer-ons, pull-offs and slides lack the click.
-  const key = note.pitchMidi - 21;
-  let onset = 0;
-  for (let f = Math.max(0, note.startFrame - 2); f <= note.startFrame + 2; f++) onset = Math.max(onset, onsets[f]?.[key] ?? 0);
-  const attack = Math.min(onset, pluckStrength(transients, startSeconds));
+  const { contours, transients } = context;
+  // Attack: the pick click in the audio. (Basic Pitch's onset activation is no help here: it fires on
+  // any sudden pitch change, hammer-ons included, and stays low for a picked note that an overtone of
+  // another string was already sounding.)
+  const attack = pluckStrength(transients, startSeconds);
   const result: Articulation = { attack: Number(attack.toFixed(3)) };
 
   // Smoothed pitch deviation (median of 3) over the frames with a clear pitch.

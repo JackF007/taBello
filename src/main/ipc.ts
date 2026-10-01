@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, type IpcMainInvokeEvent } from 'electron';
 import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -10,9 +10,12 @@ import {
   type NoteEvent,
   type Project,
   type ProjectSummary,
+  type SeparationModelStatus,
   type Sensitivity,
 } from '../shared/ipc';
-import { isInstrumentId } from '../shared/instruments';
+import { isInstrumentId, type InstrumentId } from '../shared/instruments';
+import { getSample } from '../shared/samples';
+import * as separationModel from './separation/model';
 import * as projects from './projects';
 import * as transcription from './transcription/service';
 
@@ -23,7 +26,23 @@ const EXPORT_FILTERS: Record<ExportFormat, Electron.FileFilter> = {
 };
 const MAX_EXPORT_BYTES = 50 * 1024 * 1024;
 
-const fail = (code: 'invalid' | 'not-found' | 'failed', message: string) => ({ ok: false, error: { code, message } }) as const;
+const fail = (code: 'invalid' | 'not-found' | 'failed' | 'cancelled', message: string) => ({ ok: false, error: { code, message } }) as const;
+
+/** Where the separation model is kept (see separation/model.ts). */
+const modelDir = () => path.join(app.getPath('userData'), 'models');
+
+/** Bundled sample recordings: next to the app when packaged, in resources/ when run from source. */
+const samplesDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'samples') : path.join(app.getAppPath(), 'resources', 'samples'));
+
+async function separationStatus(): Promise<SeparationModelStatus> {
+  return {
+    installed: await separationModel.isModelInstalled(modelDir()),
+    downloadBytes: separationModel.MODEL_SOURCE.downloadBytes,
+    sizeBytes: separationModel.MODEL_SOURCE.bytes,
+  };
+}
+
+let modelDownload: AbortController | null = null;
 
 /** Rejects IPC calls from anything other than our own renderer (e.g. an injected iframe). */
 function assertTrustedSender(event: IpcMainInvokeEvent, isTrustedUrl: (url: string) => boolean): void {
@@ -52,26 +71,119 @@ export function registerIpcHandlers(isTrustedUrl: (url: string) => boolean): voi
     },
   }));
 
+  /** Transcribes a file and saves the result as a project; progress goes to the calling window. */
+  const runTranscription = async (
+    event: IpcMainInvokeEvent,
+    job: { inputPath: string; instrument: InstrumentId; sensitivity: Sensitivity; isolate: boolean; title?: string },
+  ): Promise<IpcResult<ProjectSummary>> => {
+    const sendProgress = (progress: unknown) => {
+      if (!event.sender.isDestroyed()) event.sender.send(IpcChannels.transcriptionProgress, progress);
+    };
+    let separation: transcription.SeparationJob | undefined;
+    if (job.isolate) {
+      if (!(await separationModel.isModelInstalled(modelDir()))) {
+        return fail('invalid', 'Download the separation model first, or turn off "Isolate".');
+      }
+      // Demucs separates bass, drums, vocals and "other": guitars and ukuleles are in "other".
+      separation = { modelPath: path.join(modelDir(), separationModel.MODEL_FILE), source: job.instrument === 'bass' ? 'bass' : 'other' };
+    }
+    const result = await transcription.transcribe(job.inputPath, job.instrument, job.sensitivity, sendProgress, separation);
+    if (!result.ok) return result;
+
+    sendProgress({ stage: 'saving', fraction: 0 });
+    const summary = await projects.createProject({
+      sourcePath: job.inputPath,
+      instrument: job.instrument,
+      title: job.title,
+      isolated: job.isolate,
+      ...result.value,
+    });
+    return { ok: true, value: summary };
+  };
+
+  const validRequest = (instrument: unknown, sensitivity: unknown, isolate: unknown) =>
+    isInstrumentId(instrument) && SENSITIVITIES.includes(sensitivity as never) && (isolate === undefined || typeof isolate === 'boolean');
+
   handle(IpcChannels.transcribe, async (event, payload: unknown): Promise<IpcResult<ProjectSummary>> => {
-    const { path: inputPath, instrument, sensitivity } = (payload ?? {}) as Record<string, unknown>;
-    if (
-      typeof inputPath !== 'string' || !path.isAbsolute(inputPath) ||
-      !isInstrumentId(instrument) || !SENSITIVITIES.includes(sensitivity as never)
-    ) {
+    const { path: inputPath, instrument, sensitivity, isolate } = (payload ?? {}) as Record<string, unknown>;
+    if (typeof inputPath !== 'string' || !path.isAbsolute(inputPath) || !validRequest(instrument, sensitivity, isolate)) {
       return fail('invalid', 'Please choose an audio or video file from your computer.');
     }
     const isFile = await stat(inputPath).then((s) => s.isFile(), () => false);
     if (!isFile) return fail('not-found', 'The selected file could not be found.');
+    return runTranscription(event, {
+      inputPath,
+      instrument: instrument as InstrumentId,
+      sensitivity: sensitivity as Sensitivity,
+      isolate: isolate === true,
+    });
+  });
 
-    const sendProgress = (progress: unknown) => {
-      if (!event.sender.isDestroyed()) event.sender.send(IpcChannels.transcriptionProgress, progress);
+  handle(IpcChannels.transcribeSample, async (event, sampleId: unknown, payload: unknown): Promise<IpcResult<ProjectSummary>> => {
+    const sample = getSample(sampleId);
+    const { instrument, sensitivity, isolate } = (payload ?? {}) as Record<string, unknown>;
+    if (!sample || !validRequest(instrument, sensitivity, isolate)) return fail('invalid', 'Unknown sample.');
+    const inputPath = path.join(samplesDir(), sample.file);
+    const isFile = await stat(inputPath).then((s) => s.isFile(), () => false);
+    if (!isFile) return fail('not-found', 'This sample is missing from the installation.');
+    return runTranscription(event, {
+      inputPath,
+      instrument: instrument as InstrumentId,
+      sensitivity: sensitivity as Sensitivity,
+      isolate: isolate === true,
+      title: sample.title,
+    });
+  });
+
+  handle(IpcChannels.separationModelStatus, () => separationStatus());
+
+  handle(IpcChannels.downloadSeparationModel, async (event): Promise<IpcResult<SeparationModelStatus>> => {
+    if (modelDownload) return fail('invalid', 'The model is already downloading.');
+    const controller = new AbortController();
+    modelDownload = controller;
+    try {
+      await separationModel.downloadModel({
+        dir: modelDir(),
+        // Chromium's network stack: honours the system proxy settings.
+        fetch: (url, init) => net.fetch(url as string, init),
+        signal: controller.signal,
+        onProgress: (fraction) => {
+          if (!event.sender.isDestroyed()) event.sender.send(IpcChannels.separationModelProgress, fraction);
+        },
+      });
+      return { ok: true, value: await separationStatus() };
+    } catch (error) {
+      if (error instanceof separationModel.ModelError) {
+        return fail(error.code === 'cancelled' ? 'cancelled' : error.code === 'invalid' ? 'invalid' : 'failed', error.message);
+      }
+      return fail('failed', error instanceof Error ? error.message : String(error));
+    } finally {
+      modelDownload = null;
+    }
+  });
+
+  handle(IpcChannels.cancelSeparationModelDownload, () => modelDownload?.abort());
+
+  handle(IpcChannels.importSeparationModel, async (event): Promise<IpcResult<SeparationModelStatus | null>> => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const options: Electron.OpenDialogOptions = {
+      title: 'Import the Demucs model',
+      properties: ['openFile'],
+      filters: [{ name: 'Demucs model (htdemucs.onnx)', extensions: ['onnx'] }],
     };
-    const result = await transcription.transcribe(inputPath, instrument, sensitivity as Sensitivity, sendProgress);
-    if (!result.ok) return result;
+    const { canceled, filePaths } = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    if (canceled || filePaths.length === 0) return { ok: true, value: null };
+    try {
+      await separationModel.importModel(modelDir(), filePaths[0]);
+      return { ok: true, value: await separationStatus() };
+    } catch (error) {
+      return fail('invalid', error instanceof Error ? error.message : String(error));
+    }
+  });
 
-    sendProgress({ stage: 'saving', fraction: 0 });
-    const summary = await projects.createProject({ sourcePath: inputPath, instrument, ...result.value });
-    return { ok: true, value: summary };
+  handle(IpcChannels.deleteSeparationModel, async () => {
+    await separationModel.deleteModel(modelDir());
+    return separationStatus();
   });
 
   handle(IpcChannels.cancelTranscription, () => transcription.cancelTranscription());

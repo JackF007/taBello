@@ -16,13 +16,17 @@ function transcriptionAssets(): Plugin {
   const sources = {
     wasm: dirname(require.resolve('@tensorflow/tfjs-backend-wasm')),
     model: join(dirname(require.resolve('@spotify/basic-pitch/package.json')), 'model'),
+    // ONNX Runtime (source separation): the threaded WebAssembly build and its loader.
+    ort: dirname(require.resolve('onnxruntime-web')),
   };
+  const include = (folder: string, file: string) =>
+    folder === 'wasm' ? file.endsWith('.wasm') : folder === 'ort' ? /^ort-wasm-simd-threaded\.(wasm|mjs)$/.test(file) : true;
   return {
     name: 'tabello-transcription-assets',
     generateBundle() {
       for (const [folder, dir] of Object.entries(sources)) {
         for (const file of readdirSync(dir)) {
-          if (folder === 'wasm' && !file.endsWith('.wasm')) continue;
+          if (!include(folder, file)) continue;
           this.emitFile({ type: 'asset', fileName: `transcription-assets/${folder}/${file}`, source: readFileSync(join(dir, file)) });
         }
       }
@@ -50,7 +54,7 @@ export default defineConfig({
           // The bundled TensorFlow.js/Emscripten code expects CommonJS globals, which ES modules lack.
           banner: (chunk) =>
             chunk.name === 'transcriptionWorker'
-              ? "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" +
+              ? "import { createRequire as __tabelloCreateRequire } from 'node:module'; const require = __tabelloCreateRequire(import.meta.url);" +
                 ' const __dirname = import.meta.dirname; const __filename = import.meta.filename;'
               : '',
         },
