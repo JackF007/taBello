@@ -18,6 +18,8 @@ const api: TabelloApi = {
   listProjects: () => ipcRenderer.invoke(IpcChannels.listProjects),
   getProject: (id) => ipcRenderer.invoke(IpcChannels.getProject, id),
   updateProjectSettings: (id, settings) => ipcRenderer.invoke(IpcChannels.updateProjectSettings, id, settings),
+  updateProjectNotes: (id, notes) => ipcRenderer.invoke(IpcChannels.updateProjectNotes, id, notes),
+  resetProjectNotes: (id) => ipcRenderer.invoke(IpcChannels.resetProjectNotes, id),
   deleteProject: (id) => ipcRenderer.invoke(IpcChannels.deleteProject, id),
   exportFile: (request) => ipcRenderer.invoke(IpcChannels.exportFile, request),
 };

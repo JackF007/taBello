@@ -7,6 +7,7 @@ import {
   type AppInfo,
   type ExportFormat,
   type IpcResult,
+  type NoteEvent,
   type Project,
   type ProjectSummary,
   type Sensitivity,
@@ -86,6 +87,17 @@ export function registerIpcHandlers(isTrustedUrl: (url: string) => boolean): voi
     if (typeof id !== 'string' || !projects.isValidSettings(settings)) return fail('invalid', 'Invalid project settings.');
     const summary = await projects.updateProjectSettings(id, settings);
     return summary ? { ok: true, value: summary } : fail('not-found', 'This project no longer exists.');
+  });
+
+  handle(IpcChannels.updateProjectNotes, async (_event, id: unknown, notes: unknown): Promise<IpcResult<ProjectSummary>> => {
+    if (typeof id !== 'string' || !projects.isValidNotes(notes)) return fail('invalid', 'Invalid notes.');
+    const summary = await projects.updateProjectNotes(id, notes);
+    return summary ? { ok: true, value: summary } : fail('not-found', 'This project no longer exists.');
+  });
+
+  handle(IpcChannels.resetProjectNotes, async (_event, id: unknown): Promise<IpcResult<NoteEvent[]>> => {
+    const notes = typeof id === 'string' ? await projects.resetProjectNotes(id) : null;
+    return notes ? { ok: true, value: notes } : fail('not-found', 'This project no longer exists.');
   });
 
   handle(IpcChannels.deleteProject, async (_event, id: unknown): Promise<IpcResult<void>> => {

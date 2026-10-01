@@ -1,6 +1,7 @@
 // Contract between the main process and the renderer.
 // Main registers a handler for each channel, preload exposes them as `window.tabello`.
 import type { InstrumentId } from './instruments';
+import type { MeterId } from './meters';
 
 export const IpcChannels = {
   getAppInfo: 'app:get-info',
@@ -10,6 +11,8 @@ export const IpcChannels = {
   listProjects: 'projects:list',
   getProject: 'projects:get',
   updateProjectSettings: 'projects:update-settings',
+  updateProjectNotes: 'projects:update-notes',
+  resetProjectNotes: 'projects:reset-notes',
   deleteProject: 'projects:delete',
   exportFile: 'export:save-file',
 } as const;
@@ -44,6 +47,8 @@ export interface NoteEvent {
   pitch: number;
   /** Model confidence / loudness, 0..1. */
   velocity: number;
+  /** String chosen by the user while editing (index in the tuning's physical order); a hint for fingering. */
+  string?: number;
 }
 
 export type TranscriptionStage = 'starting' | 'extracting' | 'transcribing' | 'saving';
@@ -66,11 +71,16 @@ export interface TranscriptionRequest {
 
 export interface ProjectSettings {
   instrument: InstrumentId;
-  tuningId: string;
+  /** One of the instrument's tunings; null means "use the detected tuning". */
+  tuningId: string | null;
   /** User-chosen tempo in BPM; null means "use the detected tempo". */
   tempo: number | null;
   /** Capo fret for guitar/bass (0 = none); null means "use the detected capo". */
   capo: number | null;
+  /** Time signature / feel; null means "use the detected meter". */
+  meter: MeterId | null;
+  /** Show chord names and diagrams above the staff. */
+  chords: boolean;
 }
 
 export interface ProjectSummary {
@@ -89,7 +99,12 @@ export interface Project extends ProjectSummary {
   /** False when the original audio/video file was moved or deleted. */
   sourceAvailable: boolean;
   notes: NoteEvent[];
+  /** True when the notes were edited by hand (the detected ones can be restored). */
+  edited: boolean;
 }
+
+/** Upper bound on the notes a project can hold (a 15-minute recording yields a few thousand). */
+export const MAX_NOTES = 50_000;
 
 export type ExportFormat = 'midi' | 'gp' | 'alphatex';
 
@@ -123,6 +138,10 @@ export interface TabelloApi {
   listProjects(): Promise<ProjectSummary[]>;
   getProject(id: string): Promise<IpcResult<Project>>;
   updateProjectSettings(id: string, settings: ProjectSettings): Promise<IpcResult<ProjectSummary>>;
+  /** Saves hand-edited notes; the notes detected by the transcription are kept for resetProjectNotes. */
+  updateProjectNotes(id: string, notes: NoteEvent[]): Promise<IpcResult<ProjectSummary>>;
+  /** Restores the notes detected by the transcription and returns them. */
+  resetProjectNotes(id: string): Promise<IpcResult<NoteEvent[]>>;
   deleteProject(id: string): Promise<IpcResult<void>>;
   /** Shows a save dialog and writes the data. Resolves to the saved path, or null if cancelled. */
   exportFile(request: ExportRequest): Promise<IpcResult<string | null>>;
