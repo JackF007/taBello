@@ -2,11 +2,16 @@
   "name": "tabello",
   "productName": "TaBello",
   "version": "0.1.0",
-  "description": "Offline-first desktop app that turns audio and video into notation and tablature.",
+  "description": "Offline desktop app that turns audio and video recordings into guitar, bass and ukulele tabs.",
+  "license": "GPL-3.0-or-later",
   "author": "TaBello contributors",
+  "homepage": "https://github.com/JackF007/taBello",
   "repository": {
     "type": "git",
     "url": "https://github.com/JackF007/taBello.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JackF007/taBello/issues"
   },
   "private": true,
   "type": "module",
