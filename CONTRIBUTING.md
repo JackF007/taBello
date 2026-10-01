@@ -46,8 +46,9 @@ npm run test:e2e   # on Linux without a display: xvfb-run -a npm run test:e2e
 ## Pull requests
 
 - Keep each pull request focused on one change, and describe what it fixes or adds.
-- Add or update tests for behavior changes. For transcription accuracy, show the before/after numbers
-  of the accuracy test (`src/main/transcription/pipeline.test.ts`) or of a recording you used.
+- Add or update tests for behavior changes. For transcription or fingering accuracy, show before/after
+  numbers of `npm run benchmark` on GuitarSet (see the README), of the synthetic accuracy test
+  (`src/main/transcription/pipeline.test.ts`), or of a recording you used.
 - Follow the existing code style (TypeScript strict, ESLint, small pure functions in the music engine).
 - TaBello runs fully offline: please do not add network calls, telemetry or online services.
 - New dependencies must have a license compatible with GPL-3.0 and be listed in `THIRD_PARTY_NOTICES.md`

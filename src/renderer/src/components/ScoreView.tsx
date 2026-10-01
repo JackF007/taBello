@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlphaTabApi, LayoutMode, LogLevel, model, NotationElement, PlayerMode, synth } from '@coderline/alphatab';
 import { AudioLines, Loader2, Pause, Play, Repeat, Square, Timer, X } from 'lucide-react';
 import Equalizer from '@/components/Equalizer';
@@ -20,6 +20,10 @@ interface ScoreViewProps {
   onNoteClick?: (location: NoteLocation) => void;
   /** Note to highlight. */
   selected?: NoteLocation | null;
+  /** Extra controls for the transport bar. */
+  controls?: ReactNode;
+  /** An extra toolbar row below the transport bar. */
+  toolbar?: ReactNode;
 }
 
 type Source = 'synth' | 'original';
@@ -61,7 +65,7 @@ interface Box {
  * Renders notation and tablature with alphaTab and plays it back, either with the bundled soundfont
  * or by following the original recording (cursor in sync, same speed and loop controls).
  */
-const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected = null }: ScoreViewProps) => {
+const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected = null, controls, toolbar }: ScoreViewProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<AlphaTabApi | null>(null);
@@ -292,6 +296,7 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
         >
           <Timer className="h-4 w-4 mr-1" /> Metronome
         </Toggle>
+        {controls}
         <Equalizer active={isPlaying} className="h-6 ml-1" />
         <div className="flex flex-wrap items-center gap-3 ml-auto text-sm text-muted-foreground">
           {media && (
@@ -330,6 +335,8 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
           </span>
         )}
       </div>
+
+      {toolbar && <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2">{toolbar}</div>}
 
       {error && <p className="px-4 py-3 text-sm text-destructive">Could not render the score: {error}</p>}
 
