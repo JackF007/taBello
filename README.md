@@ -17,6 +17,10 @@ connection needed: your files never leave your machine.
   shuffle; 6/8 can be chosen by hand), tuning (drop D, half step down, 5-string bass, low-G ukulele)
   and **capo** — every guess can be overridden from a menu, and the score updates instantly.
 - **Chord names and diagrams** above the staff, named after the shapes you play (relative to the capo).
+- **Playing techniques** (experimental): bends and releases, hammer-ons and pull-offs, slides (between
+  notes, into and out of notes) and vibrato, recognized from the pitch contours and the pick attack.
+- **Tempo changes**: when a recording speeds up or slows down, the bar lines follow it and the score
+  carries the tempo changes (also in Guitar Pro and MIDI exports).
 - **Playable fingerings**: notes are placed on strings and frets by an optimizer that keeps chord shapes
   compact and hand movement small.
 - **Notation + tablature** with synthesized playback, a cursor, a metronome, slow-down and loops.
@@ -76,16 +80,20 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 - **Tuning matters**: drop D, half step down, 5-string bass and low-G ukulele are recognized; for other
   tunings (DADGAD, open G…) select them by hand so the frets come out right.
 - **6/8**: TaBello does not guess compound meters; choose 6/8 and set the tempo in dotted quarters.
+- **Techniques** are detected from how each note starts and how its pitch moves. If you see hammer-ons
+  or slides that were not played (e.g. on a heavily compressed or effected recording), turn
+  *Techniques* off. If bar lines drift on a piece played to a click, turn *Tempo changes* off.
 
 ### Known limitations
 
 - Rhythms are quantized to 16th notes, or to 8th-note triplets in the triplet feel; mixed rhythms
   (triplets inside a straight 4/4) are approximated.
-- Playing techniques (bends, slides, hammer-ons, vibrato) are not written yet.
+- Playing techniques are inferred, not certain: palm mutes, harmonics, tapping and slides of one or two
+  frets (which look like bends) are not recognized.
 - Only notes can be edited (fret, string, pitch, delete); adding notes and changing rhythms is best done
   after exporting to Guitar Pro, MuseScore or TuxGuitar.
 - Very fast passages and dense chords can lose notes; overtones can occasionally add an octave note.
-- The tempo is assumed constant over the whole piece.
+- Tempo changes are followed when they are gradual or sustained; rubato and free-time passages are not.
 
 ## How it works
 
@@ -93,12 +101,15 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 2. **[Basic Pitch](https://github.com/spotify/basic-pitch-ts)**, Spotify's polyphonic note-detection model,
    runs locally with TensorFlow.js (WebAssembly backend) and lists the notes it hears.
 3. TaBello cleans the result: it removes quiet overtones and merges the phantom re-attacks the model
-   reports for notes that are still ringing.
-4. It estimates the **tempo** (onset periodicity), **key** (Krumhansl–Schmuckler profiles) and **time
+   reports for notes that are still ringing. From Basic Pitch's pitch contours and the audio's pick
+   clicks it measures how each note was played: attack strength, bends, glides and vibrato.
+4. It estimates the **tempo** (onset periodicity, then a dynamic-programming beat tracker for tempo
+   changes), **key** (Krumhansl–Schmuckler profiles) and **time
    signature** (does the off-beat fit a straight or a triplet grid? do accents and bass notes repeat
    every three or four beats?), then quantizes the notes to that grid with bar lines on the downbeats.
 5. It detects the **tuning** and **capo** by comparing how playable the part is under each candidate, and
-   chooses strings and frets with a Viterbi search that balances easy shapes against hand movement.
+   chooses strings and frets with a Viterbi search that balances easy shapes against hand movement
+   (notes played legato stay on one string). Unpicked notes become hammer-ons, pull-offs or slides.
 6. It names the **chords** from the notes struck together, and **[alphaTab](https://alphatab.net/)**
    renders the notation, tablature and chord diagrams and plays them back — with its own synthesizer
    or by following the original recording.
@@ -227,10 +238,11 @@ Ideas, roughly by priority — contributions welcome:
 - [x] Triplets, swing, 3/4 and 6/8
 - [x] Edit notes directly in the tab
 - [ ] Tune thresholds and fingering costs on GuitarSet
-- [ ] Optional source separation to isolate the guitar or bass from a full mix
+- [ ] Optional source separation to isolate the guitar or bass from a full mix (Demucs via ONNX
+  Runtime, model downloaded on demand)
 - [ ] Detect recordings tuned off A = 440 Hz (e.g. 432 Hz) from pitch bends
-- [ ] Write techniques: bends, slides, hammer-ons, pull-offs, vibrato
-- [ ] Tempo changes within a piece
+- [x] Write techniques: bends, slides, hammer-ons, pull-offs, vibrato (experimental)
+- [x] Tempo changes within a piece
 - [ ] Add notes and change rhythms in the editor
 
 ## Contributing

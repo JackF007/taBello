@@ -49,6 +49,18 @@ export interface NoteEvent {
   velocity: number;
   /** String chosen by the user while editing (index in the tuning's physical order); a hint for fingering. */
   string?: number;
+  // How the note was played, from the pitch contours and the audio (absent in older projects).
+  /** Onset strength, 0..1: low for notes that were not picked (hammer-ons, pull-offs, slides). */
+  attack?: number;
+  /** Bend, in semitones (0.5 steps). */
+  bend?: number;
+  /** The bend goes back down to the original pitch. */
+  release?: boolean;
+  /** Pitch glide at the start of the note, in semitones relative to it (negative: from below). */
+  slideIn?: number;
+  /** Pitch glide at the end of the note, in semitones (positive: upwards). */
+  slideOut?: number;
+  vibrato?: boolean;
 }
 
 export type TranscriptionStage = 'starting' | 'extracting' | 'transcribing' | 'saving';
@@ -81,6 +93,10 @@ export interface ProjectSettings {
   meter: MeterId | null;
   /** Show chord names and diagrams above the staff. */
   chords: boolean;
+  /** Write playing techniques (bends, slides, hammer-ons, vibrato). */
+  techniques: boolean;
+  /** Follow tempo changes in the recording (otherwise the tempo is constant). */
+  tempoChanges: boolean;
 }
 
 export interface ProjectSummary {
