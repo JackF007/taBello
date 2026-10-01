@@ -3,9 +3,11 @@ import { Midi } from '@tonejs/midi';
 import { describe, expect, it } from 'vitest';
 import type { NoteEvent } from '../../../../shared/ipc';
 import { INSTRUMENTS } from '../../../../shared/instruments';
-import { arrange, detectCapo, SLOTS_PER_BAR, type ArrangeOptions, type TabBeat } from './arrange';
+import { METERS, type MeterId } from '../../../../shared/meters';
+import { arrange, detectCapo, detectTuning, meterTicks, type ArrangeOptions, type TabBeat } from './arrange';
+import { applyEdit, findNote } from './edit';
 import { toAlphaTex, toMidi } from './export';
-import { alphaTexPitch, detectKey, estimateTempo, makeKey } from './theory';
+import { alphaTexPitch, chordName, detectKey, detectMeter, estimateTempo, makeKey } from './theory';
 
 const guitar = INSTRUMENTS.guitar;
 const standard = guitar.tunings[0].strings;
@@ -19,7 +21,8 @@ function random(seed: number) {
   };
 }
 
-const slots = (beat: TabBeat) => (16 / beat.value) * (beat.dotted ? 1.5 : 1);
+const ticks = (beat: TabBeat) => (48 / beat.value) * (beat.dotted ? 1.5 : 1) * (beat.tuplet ? 2 / 3 : 1);
+const METER_IDS = Object.keys(METERS) as MeterId[];
 
 function parseAlphaTex(tex: string) {
   const importer = new alphaTab.importer.AlphaTexImporter();
@@ -163,9 +166,13 @@ describe('export', () => {
             );
             const bpm = 60 + rand() * 120;
             const capo = Math.floor(rand() * 6);
-            const arrangement = arrange(notes, { tuning: tuning.strings, frets: instrument.frets, bpm, offset: rand(), capo });
+            const meter = METER_IDS[Math.floor(rand() * METER_IDS.length)];
+            const barPhase = Math.floor(rand() * 4);
+            const arrangement = arrange(notes, {
+              tuning: tuning.strings, frets: instrument.frets, bpm, offset: rand(), capo, meter, barPhase,
+            });
             for (const bar of arrangement.bars) {
-              expect(bar.reduce((sum, b) => sum + slots(b), 0)).toBe(SLOTS_PER_BAR);
+              expect(bar.reduce((sum, b) => sum + ticks(b), 0)).toBe(meterTicks(METERS[meter]).bar);
             }
 
             const tex = toAlphaTex(arrangement, {
@@ -177,6 +184,11 @@ describe('export', () => {
             expect(staff.bars).toHaveLength(arrangement.bars.length);
             expect(staff.stringTuning.tunings).toEqual([...tuning.strings].reverse());
             expect(staff.capo).toBe(capo);
+            // alphaTab agrees that every bar is complete, triplets included.
+            for (const bar of staff.bars) {
+              const length = bar.voices[0].beats.reduce((sum, b) => sum + b.playbackDuration, 0);
+              expect(length).toBe(bar.masterBar.calculateDuration());
+            }
           }
         }
       }
@@ -220,5 +232,241 @@ describe('Guitar Pro export', () => {
     expect(score.title).toBe('Round trip');
     const frets = score.tracks[0].staves[0].bars[0].voices[0].beats.map((b) => b.notes[0].fret);
     expect(frets).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe('meters', () => {
+  const options: ArrangeOptions = { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 };
+
+  it('writes a waltz in 3/4 bars', () => {
+    const notes = [40, 55, 59, 45, 57, 60].map((p, i) => note(i * 0.5, p, 0.45));
+    const { bars } = arrange(notes, { ...options, meter: '3/4' });
+    expect(bars).toHaveLength(2);
+    expect(bars.map((bar) => bar.map((b) => b.value))).toEqual([[4, 4, 4], [4, 4, 4]]);
+  });
+
+  it('writes 6/8 as two dotted-quarter beats of three eighth notes', () => {
+    // At 60 BPM (dotted quarters) the eighth notes are 1/3 s apart.
+    const notes = Array.from({ length: 6 }, (_, i) => note(i / 3, 52 + i, 0.3));
+    const { bars } = arrange(notes, { ...options, bpm: 60, meter: '6/8' });
+    expect(bars).toHaveLength(1);
+    expect(bars[0].map((b) => b.value)).toEqual([8, 8, 8, 8, 8, 8]);
+  });
+
+  it('writes swung eighths as triplets in a triplet feel', () => {
+    // Long-short pairs: on the beat and on its last third.
+    const notes = Array.from({ length: 8 }, (_, i) => note(Math.floor(i / 2) * 0.5 + (i % 2) * (1 / 3), 52 + i, 0.3));
+    const [bar] = arrange(notes, { ...options, meter: '4/4-triplets' }).bars;
+    expect(bar.map((b) => [b.value, b.tuplet])).toEqual(
+      Array.from({ length: 4 }, () => [[4, true], [8, true]]).flat(),
+    );
+  });
+
+  it('starts bars on the chosen downbeat, with the pickup in a bar of its own', () => {
+    // One pickup beat, then a full bar.
+    const notes = [0, 0.5, 1, 1.5, 2].map((t, i) => note(t, 52 + i, 0.45));
+    const { bars, startTime } = arrange(notes, { ...options, barPhase: 1 });
+    expect(bars).toHaveLength(2);
+    expect(bars[0].at(-1)?.notes[0].pitch).toBe(52);
+    expect(bars[1][0].notes[0].pitch).toBe(53);
+    expect(startTime).toBeCloseTo(-1.5);
+  });
+
+  it('maps score time back to the recording', () => {
+    const notes = [note(0.75, 52, 0.4), note(1.25, 55, 0.4)];
+    const arrangement = arrange(notes, { ...options, offset: 0.25 });
+    expect(arrangement.startTime).toBeCloseTo(0.75);
+    expect(arrangement.tickSeconds * 12).toBeCloseTo(0.5);
+  });
+});
+
+describe('detectMeter', () => {
+  const rand = random(7);
+  const jitter = () => (rand() - 0.5) * 0.02;
+
+  it('recognizes a waltz from its accents', () => {
+    // Bass note on 1, softer chords on 2 and 3, at 120 BPM.
+    const notes = Array.from({ length: 48 }, (_, beat) =>
+      beat % 3 === 0
+        ? [note(beat * 0.5 + jitter(), 40, 0.45, 0.9)]
+        : [55, 59, 64].map((p) => note(beat * 0.5 + jitter(), p, 0.45, 0.4)),
+    ).flat();
+    const tempo = estimateTempo(notes);
+    expect(tempo.bpm).toBeCloseTo(120, -1);
+    expect(detectMeter(notes, tempo)).toMatchObject({ meter: '3/4', barPhase: 0 });
+  });
+
+  it('keeps 4/4 for a rock pattern and finds its downbeat', () => {
+    // A pickup beat, then bass on 1 and 3 with chords on every beat.
+    const notes = Array.from({ length: 49 }, (_, beat) => {
+      const time = beat * 0.5 + jitter();
+      const chord = [55, 59, 64].map((p) => note(time, p, 0.45, 0.5));
+      return (beat - 1) % 4 === 0 ? [...chord, note(time, 40, 0.45, 1)] : chord;
+    }).flat();
+    expect(detectMeter(notes, estimateTempo(notes))).toMatchObject({ meter: '4/4', barPhase: 1 });
+  });
+
+  it('recognizes a shuffle', () => {
+    const notes = Array.from({ length: 64 }, (_, i) =>
+      note(Math.floor(i / 2) * 0.5 + (i % 2) * (1 / 3) + jitter(), i % 2 ? 47 : 40, 0.2, i % 2 ? 0.6 : 0.9),
+    );
+    expect(detectMeter(notes, estimateTempo(notes)).meter).toBe('4/4-triplets');
+  });
+
+  it('keeps straight 16th notes in 4/4', () => {
+    const notes = Array.from({ length: 64 }, (_, i) => note(i * 0.125 + jitter(), 52 + (i % 5), 0.1, i % 4 ? 0.5 : 0.9));
+    expect(detectMeter(notes, estimateTempo(notes)).meter).toBe('4/4');
+  });
+});
+
+describe('detectTuning', () => {
+  const bass = INSTRUMENTS.bass;
+  const ukulele = INSTRUMENTS.ukulele;
+  const options = { frets: guitar.frets, bpm: 120, offset: 0 };
+  const riff = (pitches: number[]) => pitches.map((p, i) => note(i * 0.25, p, 0.25));
+
+  it('keeps standard tuning for ordinary parts', () => {
+    expect(detectTuning(riff([40, 43, 45, 47, 50, 52, 55, 57]), guitar.tunings, options).id).toBe('standard');
+  });
+
+  it('finds drop D from notes below the low E', () => {
+    expect(detectTuning(riff([38, 45, 50, 38, 45, 50, 41, 43, 38, 38]), guitar.tunings, options).id).toBe('drop-d');
+  });
+
+  it('finds a 5-string bass and a low-G ukulele', () => {
+    expect(detectTuning(riff([23, 28, 30, 23, 35, 28]), bass.tunings, { ...options, frets: bass.frets }).id).toBe('five-string');
+    expect(detectTuning(riff([55, 57, 60, 64, 55, 59]), ukulele.tunings, { ...options, frets: ukulele.frets }).id).toBe('low-g');
+  });
+
+  it('finds half step down from open chord shapes a semitone lower', () => {
+    const shapes = [
+      [40, 47, 52, 56, 59, 64],
+      [45, 52, 57, 60, 64],
+      [43, 47, 50, 55, 59, 67],
+      [48, 52, 55, 60, 64],
+    ];
+    const notes = shapes.flatMap((chord, bar) => chord.map((p) => note(bar * 2, p - 1, 1.9)));
+    expect(detectTuning(notes, guitar.tunings, options).id).toBe('half-down');
+  });
+});
+
+describe('chords', () => {
+  it('names common chords', () => {
+    expect(chordName([45, 52, 57, 60, 64])).toBe('Am');
+    expect(chordName([43, 47, 50, 55, 59, 65])).toBe('G7');
+    expect(chordName([43, 48, 52, 55, 60])).toBe('C/G');
+    expect(chordName([40, 47, 52])).toBe('E5');
+    expect(chordName([50, 57, 62, 64])).toBe('Dsus2');
+    // The fifth may be left out.
+    expect(chordName([48, 52, 58])).toBe('C7');
+    expect(chordName([46, 53, 58, 62, 65], true)).toBe('Bb');
+    expect(chordName([46, 53, 58, 62, 65])).toBe('A#');
+  });
+
+  it('does not name clusters or single notes', () => {
+    expect(chordName([60])).toBeNull();
+    expect(chordName([60, 61, 62])).toBeNull();
+  });
+
+  it('spells keys with flats or sharps like their key signature', () => {
+    expect(makeKey(5, 'major').flats).toBe(true);
+    expect(makeKey(7, 'major').flats).toBe(false);
+    expect(makeKey(2, 'minor').flats).toBe(true);
+    expect(makeKey(4, 'minor').flats).toBe(false);
+  });
+
+  it('writes chord names and diagrams that alphaTab understands', () => {
+    const Am = [45, 52, 57, 60, 64];
+    const G = [43, 47, 50, 55, 59, 67];
+    const strums = [Am, Am, G].flatMap((chord, i) => chord.map((p) => note(i * 2, p, 1.9)));
+    const tex = toAlphaTex(arrange(strums, { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 }), {
+      title: 't', bpm: 120, key: makeKey(9, 'minor'), instrument: guitar, tuning: standard,
+    });
+    const staff = parseAlphaTex(tex).tracks[0].staves[0];
+    const names = staff.bars.flatMap((bar) => bar.voices[0].beats.map((b) => b.chord?.name ?? null)).filter(Boolean);
+    // Repeated chords are named once.
+    expect(names).toEqual(['Am', 'G']);
+    const am = [...staff.chords!.values()].find((c) => c.name === 'Am')!;
+    expect(am.strings).toEqual([0, 1, 2, 2, 0, -1]);
+  });
+
+  it('names the shapes relative to the capo', () => {
+    // G shape with a capo on 2 sounds as A.
+    const notes = [43, 47, 50, 55, 59, 67].map((p) => note(0, p + 2, 1.9));
+    const tex = toAlphaTex(arrange(notes, { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0, capo: 2 }), {
+      title: 't', bpm: 120, key: makeKey(9, 'major'), instrument: guitar, tuning: standard, capo: 2,
+    });
+    expect(tex).toContain('\\chord ("G" 3 0 0 0 2 3)');
+  });
+
+  it('can leave chord names out', () => {
+    const notes = [45, 52, 57, 60, 64].map((p) => note(0, p, 1.9));
+    const tex = toAlphaTex(arrange(notes, { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 }), {
+      title: 't', bpm: 120, key: makeKey(9, 'minor'), instrument: guitar, tuning: standard, chords: false,
+    });
+    expect(tex).not.toContain('\\chord');
+  });
+});
+
+describe('edits', () => {
+  const options: ArrangeOptions = { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 };
+
+  it('tracks which detected notes each tab note comes from', () => {
+    const notes = [note(0.5, 64), note(0, 60), note(0.01, 64)];
+    const placed = arrange(notes, options).bars.flat().flatMap((b) => b.notes.filter((n) => !n.tied));
+    expect(placed.map((n) => [n.pitch, n.sources])).toEqual([[60, [1]], [64, [2]], [64, [0]]]);
+  });
+
+  it('plays a note on the string the user chose', () => {
+    // E4 is normally the open 1st string; the user moved it to the B string.
+    const [[beat]] = arrange([{ ...note(0, 64, 1), string: 4 }], options).bars;
+    expect(beat.notes[0]).toMatchObject({ string: 4, fret: 5 });
+  });
+});
+
+describe('applyEdit', () => {
+  const options: ArrangeOptions = { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 };
+  const context = { tuning: standard, capo: 0, frets: guitar.frets };
+  // A C major arpeggio: C3 (A string, 3rd fret), E3, G3.
+  const notes = [note(0, 48, 0.45), note(0.5, 52, 0.45), note(1, 55, 0.45)];
+  const at = (beat: number) => {
+    const arrangement = arrange(notes, options);
+    const location = { bar: 0, beat, string: arrangement.bars[0][beat].notes[0].string };
+    return { location, placed: findNote(arrangement, location)! };
+  };
+
+  it('deletes the detected notes behind a tab note', () => {
+    const { placed, location } = at(1);
+    const result = applyEdit(notes, placed, location, { type: 'delete' }, context)!;
+    expect(result.notes.map((n) => n.pitch)).toEqual([48, 55]);
+    expect(result.location).toBeNull();
+  });
+
+  it('changes the fret, keeping the string', () => {
+    const { placed, location } = at(0);
+    const result = applyEdit(notes, placed, location, { type: 'fret', fret: 5 }, context)!;
+    expect(result.notes[0]).toMatchObject({ pitch: 50, string: placed.string });
+    expect(findNote(arrange(result.notes, options), result.location!)).toMatchObject({ fret: 5, pitch: 50 });
+  });
+
+  it('moves a note to another string at the same pitch', () => {
+    const { placed, location } = at(2);
+    // G3: open 3rd string by default; move it to the 5th fret of the 4th string (D).
+    const result = applyEdit(notes, placed, location, { type: 'string', string: 2 }, context)!;
+    expect(findNote(arrange(result.notes, options), result.location!)).toMatchObject({ fret: 5, pitch: 55 });
+  });
+
+  it('moves the pitch by semitones', () => {
+    const { placed, location } = at(0);
+    const result = applyEdit(notes, placed, location, { type: 'pitch', delta: -1 }, context)!;
+    expect(result.notes[0].pitch).toBe(47);
+  });
+
+  it('rejects unplayable edits', () => {
+    const { placed, location } = at(0);
+    expect(applyEdit(notes, placed, location, { type: 'fret', fret: 30 }, context)).toBeNull();
+    // C3 cannot be played on the high E string.
+    expect(applyEdit(notes, placed, location, { type: 'string', string: 5 }, context)).toBeNull();
+    expect(applyEdit(notes, placed, location, { type: 'pitch', delta: -20 }, context)).toBeNull();
   });
 });
