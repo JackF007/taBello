@@ -12,6 +12,8 @@ export interface Tuning {
    * G string is higher than the C next to it.
    */
   strings: number[];
+  /** Considered by automatic tuning detection (default true); special tunings are only chosen by hand. */
+  autoDetect?: boolean;
 }
 
 export interface Instrument {
@@ -44,8 +46,8 @@ export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
       { id: 'drop-d', name: 'Drop D (D A D G B E)', strings: [38, 45, 50, 55, 59, 64] },
       { id: 'half-down', name: 'Half step down (E♭ A♭ D♭ G♭ B♭ E♭)', strings: [39, 44, 49, 54, 58, 63] },
       { id: 'd-standard', name: 'D standard (D G C F A D)', strings: [38, 43, 48, 53, 57, 62] },
-      { id: 'dadgad', name: 'DADGAD', strings: [38, 45, 50, 55, 57, 62] },
-      { id: 'open-g', name: 'Open G (D G D G B D)', strings: [38, 43, 50, 55, 59, 62] },
+      { id: 'dadgad', name: 'DADGAD', strings: [38, 45, 50, 55, 57, 62], autoDetect: false },
+      { id: 'open-g', name: 'Open G (D G D G B D)', strings: [38, 43, 50, 55, 59, 62], autoDetect: false },
     ],
   },
   bass: {
@@ -77,8 +79,8 @@ export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
     tunings: [
       { id: 'standard', name: 'Standard, high G (G C E A)', strings: [67, 60, 64, 69] },
       { id: 'low-g', name: 'Low G (G C E A)', strings: [55, 60, 64, 69] },
-      { id: 'd-tuning', name: 'D tuning (A D F♯ B)', strings: [69, 62, 66, 71] },
-      { id: 'baritone', name: 'Baritone (D G B E)', strings: [50, 55, 59, 64] },
+      { id: 'd-tuning', name: 'D tuning (A D F♯ B)', strings: [69, 62, 66, 71], autoDetect: false },
+      { id: 'baritone', name: 'Baritone (D G B E)', strings: [50, 55, 59, 64], autoDetect: false },
     ],
   },
 };
