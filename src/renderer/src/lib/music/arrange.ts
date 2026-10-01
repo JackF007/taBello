@@ -218,32 +218,43 @@ function chordCandidates(chord: Chord, tuning: number[], frets: number): { candi
  */
 function chooseFingerings(candidateLists: Fingering[][]): { chosen: Fingering[]; cost: number } {
   if (candidateLists.length === 0) return { chosen: [], cost: 0 };
-  // The hand covers about four frets without shifting, so small moves are nearly free.
-  const move = (a: Fingering, b: Fingering) => {
-    if (a.position === null || b.position === null) return 0;
-    const distance = Math.abs(a.position - b.position);
-    return Math.max(0, distance - 3) * 0.8 + distance * 0.1;
+  // The hand covers about four frets without shifting, so small moves are nearly free. Open strings
+  // leave the hand where it was, but give it time to move: shifts across them cost half.
+  const move = (from: number | null, to: Fingering, acrossOpen: boolean) => {
+    if (from === null || to.position === null) return 0;
+    const distance = Math.abs(from - to.position);
+    return (Math.max(0, distance - 3) * 0.8 + distance * 0.1) * (acrossOpen ? 0.5 : 1);
   };
 
   const costs: number[][] = [];
   const back: number[][] = [];
+  // Where the hand is after each candidate (the last fretted position on the best path to it), and
+  // whether only open strings were played since.
+  const hand: (number | null)[][] = [];
+  const open: boolean[][] = [];
   candidateLists.forEach((candidates, i) => {
     costs.push([]);
     back.push([]);
+    hand.push([]);
+    open.push([]);
     candidates.forEach((candidate, j) => {
       if (i === 0) {
         costs[i][j] = candidate.cost;
         back[i][j] = -1;
+        hand[i][j] = candidate.position;
+        open[i][j] = candidate.position === null;
         return;
       }
       let best = Infinity;
       let bestK = 0;
-      candidateLists[i - 1].forEach((previous, k) => {
-        const total = costs[i - 1][k] + move(previous, candidate);
+      candidateLists[i - 1].forEach((_, k) => {
+        const total = costs[i - 1][k] + move(hand[i - 1][k], candidate, open[i - 1][k]);
         if (total < best) [best, bestK] = [total, k];
       });
       costs[i][j] = best + candidate.cost;
       back[i][j] = bestK;
+      hand[i][j] = candidate.position ?? hand[i - 1][bestK];
+      open[i][j] = candidate.position === null;
     });
   });
 

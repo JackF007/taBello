@@ -26,6 +26,7 @@
     "dist": "electron-vite build && electron-builder --publish never",
     "dist:dir": "electron-vite build && electron-builder --dir --publish never",
     "test": "vitest run",
+    "benchmark": "vitest run --config vitest.benchmark.config.ts",
     "test:e2e": "electron-vite build && playwright test"
   },
   "dependencies": {
