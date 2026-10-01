@@ -115,6 +115,9 @@ export async function createProject(input: {
   instrument: InstrumentId;
   notes: NoteEvent[];
   durationSeconds: number;
+  /** Defaults to the file name. */
+  title?: string;
+  isolated?: boolean;
 }): Promise<ProjectSummary> {
   const id = randomUUID().replaceAll('-', '');
   const dir = path.join(projectsDir(), id);
@@ -125,7 +128,7 @@ export async function createProject(input: {
   const meta: StoredMeta = {
     schemaVersion: 1,
     id,
-    title: sourceName.replace(/\.[^.]+$/, '') || sourceName,
+    title: input.title ?? (sourceName.replace(/\.[^.]+$/, '') || sourceName),
     createdAt: now,
     updatedAt: now,
     sourceName,
@@ -133,6 +136,7 @@ export async function createProject(input: {
     durationSeconds: input.durationSeconds,
     noteCount: input.notes.length,
     settings: { instrument: input.instrument, tuningId: null, tempo: null, capo: null, meter: null, chords: true, techniques: true, tempoChanges: true },
+    ...(input.isolated ? { isolated: true } : {}),
   };
   await writeJsonAtomic(path.join(dir, 'notes.json'), input.notes);
   await writeJsonAtomic(path.join(dir, 'meta.json'), meta);

@@ -1,7 +1,7 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import ffmpegPath from 'ffmpeg-static';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -32,6 +32,12 @@ test.beforeAll(async () => {
     updatedAt: '2026-01-01T00:00:00.000Z', sourceName: 'old.wav', sourcePath: path.join(dir, 'old.wav'), durationSeconds: 1,
     noteCount: 1, settings: { instrument: 'piano', tuningId: 'standard', tempo: null, capo: null },
   }));
+
+  // The separation model is not in the repository; with TABELLO_DEMUCS_MODEL set, isolation is tested too.
+  if (process.env.TABELLO_DEMUCS_MODEL) {
+    mkdirSync(path.join(dir, 'user-data', 'models'), { recursive: true });
+    copyFileSync(process.env.TABELLO_DEMUCS_MODEL, path.join(dir, 'user-data', 'models', 'htdemucs.onnx'));
+  }
 
   app = await electron.launch({
     args: ['.', `--user-data-dir=${path.join(dir, 'user-data')}`, ...(process.env.CI ? ['--no-sandbox'] : [])],
@@ -167,4 +173,44 @@ test('cancels a running transcription', async () => {
 test('explains files that cannot be read', async () => {
   await page.setInputFiles('#file-upload', path.join(dir, 'not-audio.mp3'));
   await expect(page.getByRole('alert').filter({ hasText: 'Could not transcribe not-audio.mp3' })).toBeVisible({ timeout: 30_000 });
+});
+
+test('transcribes a bundled sample', async () => {
+  await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
+  await page.getByRole('button', { name: 'Try Greensleeves' }).click();
+  await page.waitForURL(/#\/project\//, { timeout: 60_000 });
+  await expect(page.getByRole('heading', { name: 'Greensleeves' })).toBeVisible();
+  await expect(page.locator('#meter')).toContainText('Auto (3/4');
+  await expect(page.locator('label:has-text("Key") + p')).toHaveText('A minor');
+  // The sample plays as the original recording.
+  await expect(page.locator('audio')).toBeAttached();
+});
+
+test('isolates the bass of the band sample', async () => {
+  test.skip(!process.env.TABELLO_DEMUCS_MODEL, 'needs TABELLO_DEMUCS_MODEL');
+  test.setTimeout(600_000);
+  await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
+  await page.getByRole('button', { name: 'Try When the Saints Go Marching In' }).click();
+  await expect(page.getByText('Isolating instrument').first()).toBeVisible({ timeout: 60_000 });
+  await page.waitForURL(/#\/project\//, { timeout: 600_000 });
+  await expect(page.locator('#instrument')).toContainText('Bass');
+  // Isolated: the kick drum no longer looks like notes below a 4-string bass.
+  await expect(page.locator('#tuning')).toContainText('Auto (Standard (E A D G))');
+});
+
+test('offers to download the separation model', async () => {
+  await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
+  const remove = page.getByRole('button', { name: /Remove model/ });
+  if (await remove.isVisible()) {
+    await remove.click();
+    await expect(remove).toBeHidden();
+  }
+  await page.locator('#isolate').click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Download the separation model');
+  await expect(dialog).toContainText('personal and research use');
+  await expect(dialog.getByRole('button', { name: 'Download' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('#isolate')).toHaveAttribute('aria-checked', 'false');
 });

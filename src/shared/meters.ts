@@ -1,6 +1,6 @@
 // Time signatures and rhythmic feels the arrangement can be written in.
 
-export type MeterId = '4/4' | '3/4' | '6/8' | '4/4-triplets';
+export type MeterId = '4/4' | '3/4' | '6/8' | '4/4-triplets' | '3/4-triplets';
 
 export interface Meter {
   id: MeterId;
@@ -28,6 +28,16 @@ export const METERS: Record<MeterId, Meter> = {
     numerator: 4,
     denominator: 4,
     beatsPerBar: 4,
+    slotsPerBeat: 3,
+    quartersPerBeat: 1,
+    tuplets: true,
+  },
+  '3/4-triplets': {
+    id: '3/4-triplets',
+    name: '3/4, triplet feel',
+    numerator: 3,
+    denominator: 4,
+    beatsPerBar: 3,
     slotsPerBeat: 3,
     quartersPerBeat: 1,
     tuplets: true,
