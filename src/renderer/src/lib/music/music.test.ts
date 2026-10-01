@@ -508,12 +508,16 @@ describe('playing techniques', () => {
   it('writes a slide when the pitch glides or the distance is too wide to hammer', () => {
     const [glide] = after([played(0, 57, { slideOut: 1.2 }), played(0.25, 60, { attack: 0.1 })]);
     expect(glide.slideOutType).toBe(alphaTab.model.SlideOutType.Legato);
-    const [wide, target] = after([played(0, 57), played(0.25, 64, { attack: 0.1 })]);
+    const [wide, target] = after([played(0, 57, { slideOut: 0.8 }), played(0.25, 64, { attack: 0.1 })]);
     expect(wide.slideOutType).toBe(alphaTab.model.SlideOutType.Legato);
     expect(target.string).toBe(wide.string);
-    // Picked again but glided into: a shift slide.
-    const [shift] = tabNotes([played(0, 57, { slideOut: 2 }), played(0.25, 60, { slideIn: -1 })]);
-    expect(shift.slideOutType).toBe(alphaTab.model.SlideOutType.Shift);
+    // Too wide to hammer, and no glide: probably a softly picked note.
+    const [jump] = after([played(0, 57), played(0.25, 64, { attack: 0.1 })]);
+    expect(jump.slideOutType).toBe(alphaTab.model.SlideOutType.None);
+    expect(jump.isHammerPullOrigin).toBe(false);
+    // Picked again: the glide is the previous note ringing into it, not a slide.
+    const [picked] = after([played(0, 57, { slideOut: 2 }), played(0.25, 60, { slideIn: -1 })]);
+    expect(picked.slideOutType).toBe(alphaTab.model.SlideOutType.None);
   });
 
   it('does not trust attacks when hardly any note sounds picked', () => {
@@ -532,7 +536,7 @@ describe('playing techniques', () => {
     expect(bend.bendType).toBe(alphaTab.model.BendType.Bend);
     expect(bend.bendPoints!.at(-1)!.value).toBe(4);
     expect(release.bendType).toBe(alphaTab.model.BendType.BendRelease);
-    const [slideIn, slideOut] = tabNotes([played(0, 64, { slideIn: -2 }), played(1, 62, { slideOut: -3 })]);
+    const [slideIn, slideOut] = tabNotes([played(0, 64, { slideIn: -2 }), played(1.5, 62, { slideOut: -3 })]);
     expect(slideIn.slideInType).toBe(alphaTab.model.SlideInType.IntoFromBelow);
     expect(slideOut.slideOutType).toBe(alphaTab.model.SlideOutType.OutDown);
     // A long vibrato note tied across the bar line: the vibrato is written where it starts.

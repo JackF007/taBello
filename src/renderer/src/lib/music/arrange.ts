@@ -343,6 +343,9 @@ function piece(techniques: Techniques | undefined, first: boolean, last: boolean
  * the piece: when few notes show a pick click at all (fingerstyle bass, heavy compression), the cue
  * is unreliable and nothing is considered legato.
  */
+/** Widest interval (in semitones/frets) played legato: hammer-ons, pull-offs and slides. */
+const MAX_LEGATO_INTERVAL = 7;
+
 function legatoThreshold(notes: NoteEvent[]): number {
   const attacks = notes.map((n) => n.attack).filter((a): a is number => a !== undefined).sort((a, b) => a - b);
   if (attacks.length === 0) return -1;
@@ -406,27 +409,46 @@ function assignTechniques(notes: NoteEvent[], playable: { chord: Chord }[], chos
     const [from] = fingering.notes;
     const [to] = next.notes;
     const contiguous = playable[i].chord.endSlot >= playable[i + 1].chord.slot - 1;
-    if (!contiguous || from.string !== to.string || from.fret === to.fret) return;
+    if (!contiguous || from.string !== to.string || from.fret === to.fret || Math.abs(to.fret - from.fret) > MAX_LEGATO_INTERVAL) return;
     const a = articulations[i][0];
     const b = articulations[i + 1][0];
     const direction = Math.sign(to.fret - from.fret);
     const glides = (a.slideOut ?? 0) * direction >= 0.5 || (b.slideIn ?? 0) * direction <= -0.5;
+    // Only notes without a new pick attack are connected: when a note is picked again, a glide in the
+    // contours is more often the ringing previous note than a shift slide.
+    // A slide shows as a glide; without one, only a reach the fingers can hammer or pull (4 frets)
+    // is believable — a wider unpicked jump is more likely a softly picked note.
     if (b.attack !== undefined && b.attack < legatoAttack) {
-      set(i, 0, glides || Math.abs(to.fret - from.fret) >= 5 ? { slide: 'legato' } : { hammer: true });
-      if (glides || Math.abs(to.fret - from.fret) >= 5) reachedBySlide.add(i + 1);
-    } else if (glides && Math.abs((a.slideOut ?? 0) - (b.slideIn ?? 0)) >= 1.5 && !a.bend) {
-      set(i, 0, { slide: 'shift' });
-      reachedBySlide.add(i + 1);
+      if (glides) {
+        set(i, 0, { slide: 'legato' });
+        reachedBySlide.add(i + 1);
+      } else if (Math.abs(to.fret - from.fret) <= 4) {
+        set(i, 0, { hammer: true });
+      }
     }
   });
 
-  // Slides into or out of a note from nowhere in particular.
+  // Slides into or out of a note from nowhere in particular. A glide towards a touching neighbour
+  // (and not past it) is the pitch track moving to that note, not a slide.
+  const landsOn = (i: number, j: number, glide: number) => {
+    const neighbour = chosen[j];
+    if (!neighbour || !playable[j]) return false;
+    const [first, second] = i < j ? [i, j] : [j, i];
+    const touching = playable[first].chord.endSlot >= playable[second].chord.slot - 1;
+    const pitch = chosen[i].notes[0].pitch;
+    return touching && neighbour.notes.some((n) => {
+      const interval = n.pitch - pitch;
+      return Math.sign(interval) === Math.sign(glide) && Math.abs(glide) <= Math.abs(interval) + 0.75;
+    });
+  };
   chosen.forEach((fingering, i) => {
     if (fingering.notes.length !== 1) return;
     const note = fingering.notes[0];
     const a = articulations[i][0];
-    if (!note.techniques?.slide && !a.bend && Math.abs(a.slideOut ?? 0) >= 1.5) set(i, 0, { slideOut: a.slideOut! > 0 ? 'up' : 'down' });
-    if (!reachedBySlide.has(i) && !a.bend && Math.abs(a.slideIn ?? 0) >= 1) set(i, 0, { slideIn: a.slideIn! < 0 ? 'below' : 'above' });
+    const out = a.slideOut ?? 0;
+    const into = a.slideIn ?? 0;
+    if (!note.techniques?.slide && !a.bend && Math.abs(out) >= 1.5 && !landsOn(i, i + 1, out)) set(i, 0, { slideOut: out > 0 ? 'up' : 'down' });
+    if (!reachedBySlide.has(i) && !a.bend && Math.abs(into) >= 1.5 && !landsOn(i, i - 1, into)) set(i, 0, { slideIn: into < 0 ? 'below' : 'above' });
   });
 }
 
@@ -465,7 +487,10 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
     if (previous.endSlot < chord.slot - 1) return false;
     const a = articulationOf(notes, previous.pitches[0].sources);
     const b = articulationOf(notes, chord.pitches[0].sources);
-    const direction = Math.sign(chord.pitches[0].pitch - previous.pitches[0].pitch);
+    const interval = chord.pitches[0].pitch - previous.pitches[0].pitch;
+    // Beyond a fifth, the fretting hand cannot connect the notes without picking.
+    if (interval === 0 || Math.abs(interval) > MAX_LEGATO_INTERVAL) return false;
+    const direction = Math.sign(interval);
     const glides = (a.slideOut ?? 0) * direction >= 0.5 || (b.slideIn ?? 0) * direction <= -0.5;
     return glides || (b.attack !== undefined && b.attack < legatoAttack);
   });

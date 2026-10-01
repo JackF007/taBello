@@ -6,6 +6,7 @@ import type { MeterId } from './meters';
 export const IpcChannels = {
   getAppInfo: 'app:get-info',
   transcribe: 'transcription:start',
+  transcribeSample: 'transcription:start-sample',
   cancelTranscription: 'transcription:cancel',
   transcriptionProgress: 'transcription:progress',
   listProjects: 'projects:list',
@@ -15,6 +16,12 @@ export const IpcChannels = {
   resetProjectNotes: 'projects:reset-notes',
   deleteProject: 'projects:delete',
   exportFile: 'export:save-file',
+  separationModelStatus: 'separation:status',
+  downloadSeparationModel: 'separation:download',
+  cancelSeparationModelDownload: 'separation:cancel-download',
+  importSeparationModel: 'separation:import',
+  deleteSeparationModel: 'separation:delete',
+  separationModelProgress: 'separation:progress',
 } as const;
 
 export interface AppInfo {
@@ -36,6 +43,8 @@ export const MEDIA_EXTENSIONS = [
 
 /** Longer inputs are rejected: inference memory grows linearly with duration. */
 export const MAX_DURATION_SECONDS = 15 * 60;
+/** Source separation is slower (about real time) and needs more memory, so it is limited further. */
+export const MAX_SEPARATION_SECONDS = 10 * 60;
 
 /** A note detected by the model, in real time (not yet quantized to a beat grid). */
 export interface NoteEvent {
@@ -63,7 +72,7 @@ export interface NoteEvent {
   vibrato?: boolean;
 }
 
-export type TranscriptionStage = 'starting' | 'extracting' | 'transcribing' | 'saving';
+export type TranscriptionStage = 'starting' | 'extracting' | 'separating' | 'transcribing' | 'saving';
 
 export interface TranscriptionProgress {
   stage: TranscriptionStage;
@@ -79,6 +88,15 @@ export const SENSITIVITIES: Sensitivity[] = ['low', 'normal', 'high'];
 export interface TranscriptionRequest {
   instrument: InstrumentId;
   sensitivity: Sensitivity;
+  /** Isolate the instrument from the mix first (needs the separation model). */
+  isolate?: boolean;
+}
+
+export interface SeparationModelStatus {
+  installed: boolean;
+  /** Size of the download and of the installed model, in bytes. */
+  downloadBytes: number;
+  sizeBytes: number;
 }
 
 export interface ProjectSettings {
@@ -108,6 +126,8 @@ export interface ProjectSummary {
   durationSeconds: number;
   noteCount: number;
   settings: ProjectSettings;
+  /** The instrument was isolated from the mix before transcribing. */
+  isolated?: boolean;
 }
 
 export interface Project extends ProjectSummary {
@@ -148,6 +168,8 @@ export interface TabelloApi {
    * Files not coming from the user's file system are rejected.
    */
   transcribe(file: File, request: TranscriptionRequest): Promise<IpcResult<ProjectSummary>>;
+  /** Transcribes one of the bundled sample recordings (see shared/samples.ts). */
+  transcribeSample(sampleId: string, request: TranscriptionRequest): Promise<IpcResult<ProjectSummary>>;
   cancelTranscription(): Promise<void>;
   /** Returns an unsubscribe function. */
   onTranscriptionProgress(listener: (progress: TranscriptionProgress) => void): () => void;
@@ -161,4 +183,13 @@ export interface TabelloApi {
   deleteProject(id: string): Promise<IpcResult<void>>;
   /** Shows a save dialog and writes the data. Resolves to the saved path, or null if cancelled. */
   exportFile(request: ExportRequest): Promise<IpcResult<string | null>>;
+  getSeparationModel(): Promise<SeparationModelStatus>;
+  /** Downloads the separation model once (about 100 MB). */
+  downloadSeparationModel(): Promise<IpcResult<SeparationModelStatus>>;
+  cancelSeparationModelDownload(): Promise<void>;
+  /** Lets the user pick an htdemucs.onnx file. Resolves to null if the dialog is cancelled. */
+  importSeparationModel(): Promise<IpcResult<SeparationModelStatus | null>>;
+  deleteSeparationModel(): Promise<SeparationModelStatus>;
+  /** Download progress, 0..1. Returns an unsubscribe function. */
+  onSeparationModelProgress(listener: (fraction: number) => void): () => void;
 }
