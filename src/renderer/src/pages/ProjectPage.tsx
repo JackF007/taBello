@@ -22,6 +22,7 @@ import { arrange, detectCapo, detectTuning } from '@/lib/music/arrange';
 import { applyEdit, findNote, type NoteEdit, type NoteLocation } from '@/lib/music/edit';
 import { toAlphaTex, toMidi } from '@/lib/music/export';
 import { toGuitarPro } from '@/lib/music/guitarPro';
+import { detectTempoChanges } from '@/lib/music/tempo';
 import { alphaTexPitch, detectKey, detectMeter, estimateTempo } from '@/lib/music/theory';
 import { projectMediaUrl, type ExportFormat, type NoteEvent, type Project, type ProjectSettings } from '../../../shared/ipc';
 import { getTuning, INSTRUMENTS, MAX_CAPO, type InstrumentId } from '../../../shared/instruments';
@@ -68,17 +69,27 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   // Detection runs on the notes as opened, so hand edits do not shift the tempo or bar lines.
   const detectionNotes = useRef(project.notes).current;
   const detectedTempo = useMemo(() => estimateTempo(detectionNotes), [detectionNotes]);
-  const detectedMeter = useMemo(() => detectMeter(detectionNotes, detectedTempo), [detectionNotes, detectedTempo]);
+  const steadyMeter = useMemo(() => detectMeter(detectionNotes, detectedTempo), [detectionNotes, detectedTempo]);
   const key = useMemo(() => detectKey(detectionNotes), [detectionNotes]);
   const instrument = INSTRUMENTS[settings.instrument];
+  const bpm = settings.tempo ?? detectedTempo.bpm;
+  // Tempo changes are tracked around the chosen tempo, so ½× and 2× still apply.
+  const tempoChanges = useMemo(
+    () => (settings.tempoChanges && detectionNotes.length > 0 ? detectTempoChanges(detectionNotes, bpm) : null),
+    [settings.tempoChanges, detectionNotes, bpm],
+  );
+  const beats = tempoChanges?.variable ? tempoChanges.beats : undefined;
+  const detectedMeter = useMemo(
+    () => (beats ? detectMeter(detectionNotes, detectedTempo, beats) : steadyMeter),
+    [beats, detectionNotes, detectedTempo, steadyMeter],
+  );
   const meterId: MeterId = settings.meter ?? detectedMeter.meter;
   const meter = METERS[meterId];
-  const bpm = settings.tempo ?? detectedTempo.bpm;
   const timing = useMemo(() => {
     // Downbeats found for the detected meter still apply to a chosen meter with as many beats per bar.
     const barPhase = METERS[detectedMeter.meter].beatsPerBar === meter.beatsPerBar ? detectedMeter.barPhase : 0;
-    return { bpm, offset: detectedMeter.offset, meter: meterId, barPhase };
-  }, [bpm, detectedMeter, meter, meterId]);
+    return { bpm, offset: steadyMeter.offset, beats, meter: meterId, barPhase };
+  }, [bpm, steadyMeter, beats, detectedMeter, meter, meterId]);
   const [tempoText, setTempoText] = useState(String(bpm));
   useEffect(() => setTempoText(String(bpm)), [bpm]);
 
@@ -94,8 +105,8 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const capo = settings.capo ?? detectedCapo;
 
   const arrangement = useMemo(
-    () => arrange(notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo }),
-    [notes, instrument, tuning, timing, capo],
+    () => arrange(notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo, techniques: settings.techniques }),
+    [notes, instrument, tuning, timing, capo, settings.techniques],
   );
   const tex = useMemo(
     () => toAlphaTex(arrangement, { title: project.title, bpm, key, instrument, tuning: tuning.strings, capo, chords: settings.chords }),
@@ -211,7 +222,7 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const exportAs = async (format: ExportFormat) => {
     try {
       const data =
-        format === 'midi' ? toMidi(notes, { title: project.title, bpm: bpm * meter.quartersPerBeat, instrument })
+        format === 'midi' ? toMidi(notes, { title: project.title, bpm: bpm * meter.quartersPerBeat, instrument }, arrangement)
         : format === 'gp' ? toGuitarPro(tex)
         : new TextEncoder().encode(tex);
       const result = await requireApi().exportFile({ format, suggestedName: project.title, data });
@@ -336,6 +347,11 @@ const ProjectEditor = ({ project }: { project: Project }) => {
               Auto
             </Button>
           </div>
+          {beats && tempoChanges && (
+            <p className="text-xs text-muted-foreground" data-testid="tempo-range">
+              Varies {tempoChanges.range[0]}–{tempoChanges.range[1]} BPM
+            </p>
+          )}
         </Field>
 
         <Field label="Key">
@@ -350,6 +366,26 @@ const ProjectEditor = ({ project }: { project: Project }) => {
           className="h-10 self-end rounded-full border px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
         >
           Chords
+        </Toggle>
+
+        <Toggle
+          pressed={settings.techniques}
+          onPressedChange={(techniques) => updateSettings({ ...settings, techniques })}
+          aria-label="Techniques"
+          title="Write bends, slides, hammer-ons, pull-offs and vibrato (experimental)"
+          className="h-10 self-end rounded-full border px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+        >
+          Techniques
+        </Toggle>
+
+        <Toggle
+          pressed={settings.tempoChanges}
+          onPressedChange={(tempoChanges) => updateSettings({ ...settings, tempoChanges })}
+          aria-label="Follow tempo changes"
+          title="Follow the recording when it speeds up or slows down (otherwise the tempo is constant)"
+          className="h-10 self-end rounded-full border px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+        >
+          Tempo changes
         </Toggle>
 
         {capo > 0 && (

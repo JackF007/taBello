@@ -6,7 +6,8 @@ import { INSTRUMENTS } from '../../../../shared/instruments';
 import { METERS, type MeterId } from '../../../../shared/meters';
 import { arrange, detectCapo, detectTuning, meterTicks, type ArrangeOptions, type TabBeat } from './arrange';
 import { applyEdit, findNote } from './edit';
-import { toAlphaTex, toMidi } from './export';
+import { tempoMarks, toAlphaTex, toMidi } from './export';
+import { detectTempoChanges } from './tempo';
 import { alphaTexPitch, chordName, detectKey, detectMeter, estimateTempo, makeKey } from './theory';
 
 const guitar = INSTRUMENTS.guitar;
@@ -475,5 +476,141 @@ describe('applyEdit', () => {
     // C3 cannot be played on the high E string.
     expect(applyEdit(notes, placed, location, { type: 'string', string: 5 }, context)).toBeNull();
     expect(applyEdit(notes, placed, location, { type: 'pitch', delta: -20 }, context)).toBeNull();
+  });
+});
+
+describe('playing techniques', () => {
+  const options: ArrangeOptions = { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 };
+  const header = { title: 't', bpm: 120, key: makeKey(9, 'minor'), instrument: guitar, tuning: standard };
+  const played = (start: number, pitch: number, extra: Partial<NoteEvent> = {}, duration = 0.25): NoteEvent => ({
+    ...note(start, pitch, duration), attack: 0.9, ...extra,
+  });
+  const tabNotes = (notes: NoteEvent[], extra: Partial<ArrangeOptions> = {}) => {
+    const arrangement = arrange(notes, { ...options, ...extra });
+    const staff = parseAlphaTex(toAlphaTex(arrangement, header)).tracks[0].staves[0];
+    return staff.bars.flatMap((bar) => bar.voices[0].beats.flatMap((b) => b.notes));
+  };
+
+  // Picked notes before the phrase under test, as in real playing.
+  const picked = [played(0, 64), played(0.25, 62), played(0.5, 60), played(0.75, 59)];
+  const after = (notes: NoteEvent[]) => tabNotes([...picked, ...notes.map((n) => ({ ...n, start: n.start + 1 }))]).slice(picked.length);
+
+  it('writes hammer-ons and pull-offs on one string', () => {
+    // A picked, B hammered on, A pulled off.
+    const [a, b, c] = after([played(0, 57), played(0.25, 59, { attack: 0.05 }), played(0.5, 57, { attack: 0.1 })]);
+    expect(a.isHammerPullOrigin).toBe(true);
+    expect(b.isHammerPullDestination).toBe(true);
+    expect(b.isHammerPullOrigin).toBe(true);
+    expect(c.isHammerPullDestination).toBe(true);
+    expect(new Set([a.string, b.string, c.string]).size).toBe(1);
+  });
+
+  it('writes a slide when the pitch glides or the distance is too wide to hammer', () => {
+    const [glide] = after([played(0, 57, { slideOut: 1.2 }), played(0.25, 60, { attack: 0.1 })]);
+    expect(glide.slideOutType).toBe(alphaTab.model.SlideOutType.Legato);
+    const [wide, target] = after([played(0, 57), played(0.25, 64, { attack: 0.1 })]);
+    expect(wide.slideOutType).toBe(alphaTab.model.SlideOutType.Legato);
+    expect(target.string).toBe(wide.string);
+    // Picked again but glided into: a shift slide.
+    const [shift] = tabNotes([played(0, 57, { slideOut: 2 }), played(0.25, 60, { slideIn: -1 })]);
+    expect(shift.slideOutType).toBe(alphaTab.model.SlideOutType.Shift);
+  });
+
+  it('does not trust attacks when hardly any note sounds picked', () => {
+    // Fingerstyle bass or heavy compression: every attack is soft.
+    const soft = tabNotes([0, 0.25, 0.5, 0.75, 1].map((t, i) => played(t, [57, 59, 57, 59, 60][i], { attack: 0.1 })));
+    expect(soft.some((n) => n.isHammerPullOrigin || n.slideOutType !== alphaTab.model.SlideOutType.None)).toBe(false);
+  });
+
+  it('leaves picked notes alone', () => {
+    const notes = tabNotes([played(0, 57), played(0.25, 59), played(0.5, 60)]);
+    expect(notes.some((n) => n.isHammerPullOrigin || n.slideOutType !== alphaTab.model.SlideOutType.None)).toBe(false);
+  });
+
+  it('writes bends, releases, vibrato and slides into or out of nowhere', () => {
+    const [bend, release] = tabNotes([played(0, 64, { bend: 2 }, 0.5), played(1, 64, { bend: 1, release: true }, 0.5)]);
+    expect(bend.bendType).toBe(alphaTab.model.BendType.Bend);
+    expect(bend.bendPoints!.at(-1)!.value).toBe(4);
+    expect(release.bendType).toBe(alphaTab.model.BendType.BendRelease);
+    const [slideIn, slideOut] = tabNotes([played(0, 64, { slideIn: -2 }), played(1, 62, { slideOut: -3 })]);
+    expect(slideIn.slideInType).toBe(alphaTab.model.SlideInType.IntoFromBelow);
+    expect(slideOut.slideOutType).toBe(alphaTab.model.SlideOutType.OutDown);
+    // A long vibrato note tied across the bar line: the vibrato is written where it starts.
+    const [, ...vibrato] = tabNotes([played(0, 60), played(1.5, 64, { vibrato: true }, 1)]);
+    expect(vibrato.map((n) => n.vibrato)).toEqual([alphaTab.model.VibratoType.Slight, alphaTab.model.VibratoType.None]);
+  });
+
+  it('can leave techniques out', () => {
+    const [a] = tabNotes([...picked, played(1, 57), played(1.25, 59, { attack: 0.05 }), played(1.5, 64, { bend: 2 })], { techniques: false }).slice(picked.length);
+    expect(a.isHammerPullOrigin).toBe(false);
+  });
+});
+
+describe('tempo changes', () => {
+  const rand = random(11);
+  const jitter = () => (rand() - 0.5) * 0.02;
+  /** Beat times of a piece speeding up from `from` to `to` BPM over `count` beats. */
+  const accelerando = (from: number, to: number, count: number) => {
+    const beats = [0.5];
+    for (let i = 1; i < count; i++) beats.push(beats[i - 1] + 60 / (from + ((to - from) * i) / count));
+    return beats;
+  };
+  // Quarter notes with accented downbeats, a chord on each beat.
+  const playOn = (beats: number[]) =>
+    beats.flatMap((t, i) => {
+      const length = (beats[i + 1] ?? t + 0.5) - t - 0.03;
+      return [52, 55, 59].map((p) => note(t + jitter(), p, length, i % 4 === 0 ? 0.9 : 0.6));
+    });
+  const options: ArrangeOptions = { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 };
+
+  it('keeps a steady tempo constant', () => {
+    const notes = playOn(Array.from({ length: 48 }, (_, i) => 0.5 + i * 0.5));
+    expect(detectTempoChanges(notes, estimateTempo(notes).bpm).variable).toBe(false);
+  });
+
+  it('follows a piece that speeds up', () => {
+    const truth = accelerando(90, 130, 64);
+    const notes = playOn(truth);
+    const tempo = estimateTempo(notes);
+    const changes = detectTempoChanges(notes, tempo.bpm);
+    expect(changes.variable).toBe(true);
+    expect(changes.range[0]).toBeLessThan(100);
+    expect(changes.range[1]).toBeGreaterThan(118);
+    // Every tracked beat is close to a real one.
+    for (const beat of changes.beats) expect(Math.min(...truth.map((t) => Math.abs(t - beat)))).toBeLessThan(0.04);
+
+    // Following the beats, every chord lands on a beat: four quarter notes per bar.
+    const followed = arrange(notes, { ...options, bpm: tempo.bpm, offset: tempo.offset, beats: changes.beats });
+    expect(followed.bars.slice(0, -1).every((bar) => bar.length === 4 && bar.every((b) => b.value === 4))).toBe(true);
+    // A constant tempo cannot do that.
+    const constant = arrange(notes, { ...options, bpm: tempo.bpm, offset: tempo.offset });
+    expect(constant.bars.flat().filter((b) => b.value !== 4).length).toBeGreaterThan(5);
+
+    // The written tempo rises, and playback stays in time with the recording.
+    const marks = tempoMarks(followed);
+    expect(marks.filter((m) => m.visible).length).toBeGreaterThan(2);
+    expect(marks.at(-1)!.bpm).toBeGreaterThan(marks[0].bpm * 1.2);
+    const staff = parseAlphaTex(toAlphaTex(followed, { title: 't', bpm: tempo.bpm, key: makeKey(4, 'minor'), instrument: guitar, tuning: standard })).tracks[0].staves[0];
+    let tempoNow = 0;
+    let elapsed = 0;
+    staff.bars.forEach((bar, i) => {
+      tempoNow = bar.masterBar.tempoAutomations[0]?.value ?? tempoNow;
+      elapsed += (4 * 60) / tempoNow;
+      // Within the rounding of one shown tempo, and never drifting further.
+      expect(Math.abs(elapsed - (followed.barTimes[i + 1] - followed.barTimes[0]))).toBeLessThan(0.02);
+    });
+
+    // The MIDI file carries the tempo changes too.
+    const midi = new Midi(toMidi(notes, { title: 't', bpm: tempo.bpm, instrument: guitar }, followed));
+    expect(midi.header.tempos.length).toBeGreaterThan(2);
+  });
+
+  it('hides the rounding of a fractional tempo', () => {
+    const notes = playOn(Array.from({ length: 32 }, (_, i) => i * (60 / 99.9)));
+    const arrangement = arrange(notes, { ...options, bpm: 99.9, offset: 0 });
+    const marks = tempoMarks(arrangement);
+    expect(marks[0]).toEqual({ bar: 0, bpm: 100, visible: true });
+    expect(marks.slice(1).every((m) => !m.visible)).toBe(true);
+    expect(marks.length).toBeLessThanOrEqual(3);
   });
 });

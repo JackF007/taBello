@@ -3,10 +3,24 @@
 import type { NoteEvent } from '../../../../shared/ipc';
 import type { Tuning } from '../../../../shared/instruments';
 import { METERS, type Meter, type MeterId } from '../../../../shared/meters';
-import { gridOrigin } from './theory';
+import { anchorBeat, beatGrid, constantGrid } from './tempo';
 
 /** Durations are counted in ticks: 12 per quarter note, so both 16th notes (3) and triplets (4) are whole numbers. */
 export const TICKS_PER_QUARTER = 12;
+
+/** Playing techniques written on a tab note. */
+export interface Techniques {
+  /** Hammer-on or pull-off to the next note on this string. */
+  hammer?: boolean;
+  /** Slide to the next note on this string: legato (not picked again) or shift (picked again). */
+  slide?: 'legato' | 'shift';
+  slideIn?: 'below' | 'above';
+  slideOut?: 'up' | 'down';
+  /** Bend in semitones. */
+  bend?: number;
+  release?: boolean;
+  vibrato?: boolean;
+}
 
 export interface PlacedNote {
   /** String index in the tuning's physical order (see Tuning.strings). */
@@ -18,6 +32,7 @@ export interface PlacedNote {
   tied: boolean;
   /** Indices of the detected notes (in the input array) this note was made from. */
   sources: number[];
+  techniques?: Techniques;
 }
 
 export type NoteValue = 1 | 2 | 4 | 8 | 16;
@@ -40,7 +55,9 @@ export interface Arrangement {
   cost: number;
   /** Time in the recording, in seconds, where bar 1 starts. */
   startTime: number;
-  /** Length of one tick in seconds (the score runs at a constant tempo). */
+  /** Time in the recording where each bar starts, plus where the last one ends. */
+  barTimes: number[];
+  /** Average length of one tick in seconds. */
   tickSeconds: number;
 }
 
@@ -52,11 +69,15 @@ export interface ArrangeOptions {
   bpm: number;
   /** Time in seconds of a beat; aligns the grid with the music. */
   offset: number;
+  /** Beat times following the recording's tempo changes; when set, bpm and offset are not used. */
+  beats?: number[];
   /** Capo fret (0 = none). Frets in the result are relative to it. */
   capo?: number;
   meter?: MeterId;
   /** Which beat (0-based, counted from the beat at or before the first note) is a downbeat. */
   barPhase?: number;
+  /** Write playing techniques (bends, slides, hammer-ons…) detected in the notes (default true). */
+  techniques?: boolean;
 }
 
 interface ChordPitch {
@@ -112,27 +133,24 @@ function foldIntoRange(pitch: number, lowest: number, highest: number): number {
 
 interface Grid {
   chords: Chord[];
-  /** Recording time of slot 0 (the start of bar 1). */
-  startTime: number;
-  slotSeconds: number;
+  /** Recording time at which a bar (0 = the first) starts. */
+  barTime: (bar: number) => number;
 }
 
 function quantize(notes: NoteEvent[], options: ArrangeOptions, meter: Meter, lowest: number, highest: number): Grid {
-  const beatSeconds = 60 / options.bpm;
-  const slotSeconds = beatSeconds / meter.slotsPerBeat;
+  const grid = options.beats && options.beats.length >= 2 ? beatGrid(options.beats) : constantGrid(options.bpm, options.offset);
   const slotsPerBar = meter.slotsPerBeat * meter.beatsPerBar;
-
-  // Put the grid origin on a beat at or before the first note.
-  const firstStart = Math.min(...notes.map((n) => n.start));
-  const origin = gridOrigin(firstStart, options.offset, beatSeconds);
+  // Beat 0 is the beat at or just before the first note.
+  const origin = anchorBeat(grid, Math.min(...notes.map((n) => n.start)));
+  const slotOf = (t: number) => Math.round((grid.toBeat(t) - origin) * meter.slotsPerBeat);
   // Bars start on the chosen downbeat; a pickup before it gets a bar of its own.
   const phaseSlots = ((options.barPhase ?? 0) % meter.beatsPerBar) * meter.slotsPerBeat;
   const barOrigin = phaseSlots === 0 ? 0 : phaseSlots - slotsPerBar;
 
   const bySlot = new Map<number, Chord>();
   notes.forEach((note, index) => {
-    const slot = Math.max(0, Math.round((note.start - origin) / slotSeconds)) - barOrigin;
-    const endSlot = Math.max(slot + 1, Math.round((note.start + note.duration - origin) / slotSeconds) - barOrigin);
+    const slot = Math.max(0, slotOf(note.start)) - barOrigin;
+    const endSlot = Math.max(slot + 1, slotOf(note.start + note.duration) - barOrigin);
     const pitch = foldIntoRange(note.pitch, lowest, highest);
     const chord = bySlot.get(slot) ?? { slot, endSlot, pitches: [] };
     chord.endSlot = Math.max(chord.endSlot, endSlot);
@@ -150,10 +168,10 @@ function quantize(notes: NoteEvent[], options: ArrangeOptions, meter: Meter, low
   // Start at the first bar that contains a note.
   const chords = [...bySlot.values()].sort((a, b) => a.slot - b.slot);
   const shift = Math.floor(chords[0].slot / slotsPerBar) * slotsPerBar;
+  const firstBar = origin + (barOrigin + shift) / meter.slotsPerBeat;
   return {
     chords: chords.map((c) => ({ ...c, slot: c.slot - shift, endSlot: c.endSlot - shift })),
-    startTime: origin + (barOrigin + shift) * slotSeconds,
-    slotSeconds,
+    barTime: (bar) => grid.toTime(firstBar + bar * meter.beatsPerBar),
   };
 }
 
@@ -216,7 +234,7 @@ function chordCandidates(chord: Chord, tuning: number[], frets: number): { candi
  * Chooses one fingering per chord minimizing shape cost plus hand movement between chords,
  * with a Viterbi pass over the whole piece (O(chords × candidates²)).
  */
-function chooseFingerings(candidateLists: Fingering[][]): { chosen: Fingering[]; cost: number } {
+function chooseFingerings(candidateLists: Fingering[][], legatoInto: boolean[] = []): { chosen: Fingering[]; cost: number } {
   if (candidateLists.length === 0) return { chosen: [], cost: 0 };
   // The hand covers about four frets without shifting, so small moves are nearly free. Open strings
   // leave the hand where it was, but give it time to move: shifts across them cost half.
@@ -248,7 +266,14 @@ function chooseFingerings(candidateLists: Fingering[][]): { chosen: Fingering[];
       let best = Infinity;
       let bestK = 0;
       candidateLists[i - 1].forEach((_, k) => {
-        const total = costs[i - 1][k] + move(hand[i - 1][k], candidate, open[i - 1][k]);
+        // Hammer-ons, pull-offs and slides stay on one string: a note that was not picked cannot
+        // sound on another string, so this outweighs a position shift.
+        const previous = candidateLists[i - 1][k];
+        const stringChange =
+          legatoInto[i] && previous.notes.length === 1 && candidate.notes.length === 1 && previous.notes[0].string !== candidate.notes[0].string
+            ? 8
+            : 0;
+        const total = costs[i - 1][k] + move(hand[i - 1][k], candidate, open[i - 1][k]) + stringChange;
         if (total < best) [best, bestK] = [total, k];
       });
       costs[i][j] = best + candidate.cost;
@@ -288,13 +313,121 @@ function splitIntoBeats(start: number, length: number, notes: PlacedNote[], mete
         ? d.ticks <= end - cursor && (d.ticks % ticks.beat === 0 || d.ticks < ticks.beat)
         : d.ticks <= Math.min(end, nextBeat) - cursor,
     )!;
-    const beatNotes = first ? notes : notes.map((n) => ({ ...n, tied: true }));
+    const last = cursor + duration.ticks >= start + length;
+    const beatNotes = notes.map((n) => ({ ...n, tied: !first, techniques: piece(n.techniques, first, last) }));
     const beats = out.get(bar) ?? [];
     beats.push({ notes: beatNotes, value: duration.value, dotted: duration.dotted, tuplet: duration.tuplet });
     out.set(bar, beats);
     cursor += duration.ticks;
     first = false;
   }
+}
+
+/**
+ * Techniques of one piece of a note tied across beats: how it starts (bend, slide in) is written on
+ * the first piece (with vibrato), how it leaves (hammer-on, slide) on the last one.
+ */
+function piece(techniques: Techniques | undefined, first: boolean, last: boolean): Techniques | undefined {
+  if (!techniques || (first && last)) return techniques;
+  const { hammer, slide, slideOut, bend, release, slideIn, vibrato } = techniques;
+  const result: Techniques = {
+    ...(first ? { bend, release, slideIn, vibrato } : {}),
+    ...(last ? { hammer, slide, slideOut } : {}),
+  };
+  for (const key of Object.keys(result) as (keyof Techniques)[]) if (result[key] === undefined) delete result[key];
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Attack (0..1) below which a note was not picked but hammered, pulled off or slid to. Relative to
+ * the piece: when few notes show a pick click at all (fingerstyle bass, heavy compression), the cue
+ * is unreliable and nothing is considered legato.
+ */
+function legatoThreshold(notes: NoteEvent[]): number {
+  const attacks = notes.map((n) => n.attack).filter((a): a is number => a !== undefined).sort((a, b) => a - b);
+  if (attacks.length === 0) return -1;
+  const typical = attacks[attacks.length >> 1];
+  return typical < 0.4 ? -1 : Math.min(0.35, typical * 0.5);
+}
+
+interface SourceArticulation {
+  attack?: number;
+  bend?: number;
+  release?: boolean;
+  slideIn?: number;
+  slideOut?: number;
+  vibrato?: boolean;
+}
+
+/** Articulation of a tab note, combined from the detected notes it was made from. */
+function articulationOf(notes: NoteEvent[], sources: number[]): SourceArticulation {
+  const from = sources.map((i) => notes[i]);
+  const strongest = (key: 'slideIn' | 'slideOut') =>
+    from.map((n) => n[key]).filter((v): v is number => v !== undefined).sort((a, b) => Math.abs(b) - Math.abs(a))[0];
+  const attacks = from.map((n) => n.attack).filter((v): v is number => v !== undefined);
+  const bends = from.map((n) => n.bend ?? 0);
+  return {
+    attack: attacks.length > 0 ? Math.max(...attacks) : undefined,
+    bend: Math.max(...bends) > 0 ? Math.max(...bends) : undefined,
+    release: from.some((n) => n.release),
+    slideIn: strongest('slideIn'),
+    slideOut: strongest('slideOut'),
+    vibrato: from.some((n) => n.vibrato),
+  };
+}
+
+/**
+ * Decides the techniques of each tab note from how its notes were played and from its neighbours:
+ * a note that was not picked, right after another on the same string, is a hammer-on/pull-off or,
+ * when the pitch glided or the distance is too wide for the fingers, a slide.
+ */
+function assignTechniques(notes: NoteEvent[], playable: { chord: Chord }[], chosen: Fingering[], legatoAttack: number): void {
+  const articulations = chosen.map((fingering) => fingering.notes.map((n) => articulationOf(notes, n.sources)));
+  const set = (i: number, k: number, techniques: Techniques) => {
+    const note = chosen[i].notes[k];
+    note.techniques = { ...note.techniques, ...techniques };
+  };
+  // Fingerings are shared candidate objects; copy the chosen notes before writing on them.
+  chosen.forEach((fingering, i) => (chosen[i] = { ...fingering, notes: fingering.notes.map((n) => ({ ...n })) }));
+
+  const reachedBySlide = new Set<number>();
+  chosen.forEach((fingering, i) => {
+    // In strummed chords, strings beating against each other make the pitch wobble: bends and
+    // vibrato are only read on single notes and double stops.
+    if (fingering.notes.length > 2) return;
+    fingering.notes.forEach((_, k) => {
+      const a = articulations[i][k];
+      if (a.bend) set(i, k, { bend: a.bend, ...(a.release ? { release: true } : {}) });
+      if (a.vibrato) set(i, k, { vibrato: true });
+    });
+
+    const next = chosen[i + 1];
+    if (!next || fingering.notes.length !== 1 || next.notes.length !== 1) return;
+    const [from] = fingering.notes;
+    const [to] = next.notes;
+    const contiguous = playable[i].chord.endSlot >= playable[i + 1].chord.slot - 1;
+    if (!contiguous || from.string !== to.string || from.fret === to.fret) return;
+    const a = articulations[i][0];
+    const b = articulations[i + 1][0];
+    const direction = Math.sign(to.fret - from.fret);
+    const glides = (a.slideOut ?? 0) * direction >= 0.5 || (b.slideIn ?? 0) * direction <= -0.5;
+    if (b.attack !== undefined && b.attack < legatoAttack) {
+      set(i, 0, glides || Math.abs(to.fret - from.fret) >= 5 ? { slide: 'legato' } : { hammer: true });
+      if (glides || Math.abs(to.fret - from.fret) >= 5) reachedBySlide.add(i + 1);
+    } else if (glides && Math.abs((a.slideOut ?? 0) - (b.slideIn ?? 0)) >= 1.5 && !a.bend) {
+      set(i, 0, { slide: 'shift' });
+      reachedBySlide.add(i + 1);
+    }
+  });
+
+  // Slides into or out of a note from nowhere in particular.
+  chosen.forEach((fingering, i) => {
+    if (fingering.notes.length !== 1) return;
+    const note = fingering.notes[0];
+    const a = articulations[i][0];
+    if (!note.techniques?.slide && !a.bend && Math.abs(a.slideOut ?? 0) >= 1.5) set(i, 0, { slideOut: a.slideOut! > 0 ? 'up' : 'down' });
+    if (!reachedBySlide.has(i) && !a.bend && Math.abs(a.slideIn ?? 0) >= 1) set(i, 0, { slideIn: a.slideIn! < 0 ? 'below' : 'above' });
+  });
 }
 
 export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangement {
@@ -307,7 +440,7 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
   };
   const tickSeconds = 60 / options.bpm / ticks.beat;
   if (notes.length === 0) {
-    return { bars: [wholeBar()], meter, droppedNotes: 0, cost: 0, startTime: 0, tickSeconds };
+    return { bars: [wholeBar()], meter, droppedNotes: 0, cost: 0, startTime: 0, barTimes: [0, ticks.bar * tickSeconds], tickSeconds };
   }
 
   const capo = options.capo ?? 0;
@@ -323,7 +456,24 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
     droppedNotes += dropped;
     if (candidates.length > 0) playable.push({ chord, candidates });
   }
-  const { chosen, cost } = chooseFingerings(playable.map((p) => p.candidates));
+  const techniques = options.techniques !== false;
+  const legatoAttack = legatoThreshold(notes);
+  // A single note right after another, without a new attack or glided into, is on the same string.
+  const legatoInto = playable.map(({ chord }, i) => {
+    const previous = playable[i - 1]?.chord;
+    if (!techniques || !previous || chord.pitches.length !== 1 || previous.pitches.length !== 1) return false;
+    if (previous.endSlot < chord.slot - 1) return false;
+    const a = articulationOf(notes, previous.pitches[0].sources);
+    const b = articulationOf(notes, chord.pitches[0].sources);
+    const direction = Math.sign(chord.pitches[0].pitch - previous.pitches[0].pitch);
+    const glides = (a.slideOut ?? 0) * direction >= 0.5 || (b.slideIn ?? 0) * direction <= -0.5;
+    return glides || (b.attack !== undefined && b.attack < legatoAttack);
+  });
+  const { chosen, cost } = chooseFingerings(
+    playable.map((p) => p.candidates),
+    legatoInto,
+  );
+  if (techniques) assignTechniques(notes, playable, chosen, legatoAttack);
 
   // Each chord lasts until it ends or the next one starts; gaps become rests.
   const beatsByBar = new Map<number, TabBeat[]>();
@@ -340,13 +490,15 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
   if (totalTicks > cursor) splitIntoBeats(cursor, totalTicks - cursor, [], meter, beatsByBar);
 
   const bars = Array.from({ length: totalTicks / ticks.bar }, (_, i) => beatsByBar.get(i) ?? wholeBar());
+  const barTimes = Array.from({ length: bars.length + 1 }, (_, i) => grid.barTime(i));
   return {
     bars,
     meter,
     droppedNotes,
     cost: cost + droppedNotes * DROPPED_NOTE_COST,
-    startTime: grid.startTime,
-    tickSeconds: grid.slotSeconds / ticks.slot,
+    startTime: barTimes[0],
+    barTimes,
+    tickSeconds: (barTimes[bars.length] - barTimes[0]) / totalTicks,
   };
 }
 

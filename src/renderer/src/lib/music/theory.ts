@@ -1,5 +1,6 @@
 import type { NoteEvent } from '../../../../shared/ipc';
 import type { MeterId } from '../../../../shared/meters';
+import { anchorBeat, beatGrid, constantGrid } from './tempo';
 
 const SHARP_NAMES = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
 
@@ -114,11 +115,6 @@ function alignment(onsets: Onset[], period: number): { magnitude: number; phase:
   return { magnitude: total === 0 ? 0 : Math.hypot(re, im) / total, phase: Math.atan2(im, re) };
 }
 
-/** The beat at or just before the first note: beat 0 of the quantization grid. */
-export function gridOrigin(firstStart: number, offset: number, beatSeconds: number): number {
-  return offset - Math.ceil((offset - firstStart - beatSeconds / 8) / beatSeconds) * beatSeconds;
-}
-
 /**
  * Estimates the tempo by testing how well note onsets line up with a grid of each candidate period
  * and its subdivisions (phase-invariant: the magnitude of the onsets' mean phase vector), weighted by
@@ -157,6 +153,20 @@ export function estimateTempo(notes: NoteEvent[]): TempoEstimate {
   return { bpm, offset };
 }
 
+/** Like alignment(), on a grid that may change tempo: how well onsets fit `divisions` per beat. */
+function alignmentOnGrid(onsets: Onset[], toBeat: (t: number) => number, divisions: number): { magnitude: number; phase: number } {
+  let re = 0;
+  let im = 0;
+  let total = 0;
+  for (const { time, weight } of onsets) {
+    const angle = 2 * Math.PI * divisions * toBeat(time);
+    re += weight * Math.cos(angle);
+    im += weight * Math.sin(angle);
+    total += weight;
+  }
+  return { magnitude: total === 0 ? 0 : Math.hypot(re, im) / total, phase: Math.atan2(im, re) };
+}
+
 export interface MeterEstimate {
   meter: MeterId;
   /** Which beat (0-based from the beat at or before the first note) is a downbeat. */
@@ -171,15 +181,17 @@ export interface MeterEstimate {
  * - 3/4 when accents (loud onsets, bass notes) repeat every three beats rather than every four.
  * It also returns where the downbeats are, so bar lines fall on the accents.
  */
-export function detectMeter(notes: NoteEvent[], tempo: TempoEstimate): MeterEstimate {
+export function detectMeter(notes: NoteEvent[], tempo: TempoEstimate, beatTimes?: number[]): MeterEstimate {
   const onsets = mergeOnsets(notes);
   const fallback: MeterEstimate = { meter: '4/4', barPhase: 0, offset: tempo.offset };
   if (onsets.length < 12) return fallback;
   const period = 60 / tempo.bpm;
 
+  const tracked = beatTimes && beatTimes.length >= 2 ? beatGrid(beatTimes) : null;
+
   // Subdivision: a straight grid (8ths, 16ths) and a triplet grid cannot both fit off-beat notes.
-  const thirds = alignment(onsets, period / 3);
-  const quarters = alignment(onsets, period / 4);
+  const thirds = tracked ? alignmentOnGrid(onsets, tracked.toBeat, 3) : alignment(onsets, period / 3);
+  const quarters = tracked ? alignmentOnGrid(onsets, tracked.toBeat, 4) : alignment(onsets, period / 4);
   const triplets = thirds.magnitude > 0.75 && thirds.magnitude > quarters.magnitude + 0.25;
 
   // Refine the beat offset: the subdivision grid position closest to the estimated beat.
@@ -187,7 +199,7 @@ export function detectMeter(notes: NoteEvent[], tempo: TempoEstimate): MeterEsti
   const subOffset = (((((triplets ? thirds : quarters).phase / (2 * Math.PI)) * sub) % sub) + sub) % sub;
   let offset = tempo.offset;
   let bestDistance = Infinity;
-  for (let k = 0; k * sub < period; k++) {
+  for (let k = 0; !tracked && k * sub < period; k++) {
     const candidate = subOffset + k * sub;
     const d = Math.abs(candidate - tempo.offset);
     const distance = Math.min(d, period - d);
@@ -199,10 +211,11 @@ export function detectMeter(notes: NoteEvent[], tempo: TempoEstimate): MeterEsti
   const bassOf = (onset: Onset) => Math.min(...onset.notes.map((n) => n.pitch));
   const basses = onsets.map(bassOf).sort((x, y) => x - y);
   const lowRegister = Math.min(basses[Math.floor(basses.length * 0.2)], basses[Math.floor(basses.length / 2)] - 1);
-  const origin = gridOrigin(onsets[0].time, offset, period);
+  const grid = tracked ?? constantGrid(tempo.bpm, offset);
+  const origin = anchorBeat(grid, onsets[0].time);
   const strength = new Map<number, number>();
   for (const onset of onsets) {
-    const position = (onset.time - origin) / period;
+    const position = grid.toBeat(onset.time) - origin;
     const beat = Math.round(position);
     if (Math.abs(position - beat) > 0.15) continue;
     const accent = Math.max(...onset.notes.map((n) => n.velocity)) + (bassOf(onset) <= lowRegister ? 1 : 0);
