@@ -10,6 +10,12 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  # Shipped next to the app so users can read them (GPL-3.0 and third-party obligations).
+  - from: LICENSE
+    to: LICENSE.txt
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
 asarUnpack:
   # Executables and native files must live outside app.asar.
   - "**/node_modules/ffmpeg-static/**"
