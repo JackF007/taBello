@@ -19,5 +19,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["electron.vite.config.ts", "vitest.config.ts", "playwright.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
+  "include": ["electron.vite.config.ts", "vitest.config.ts", "vitest.benchmark.config.ts", "playwright.config.ts", "benchmark/**/*", "scripts/**/*", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
 }

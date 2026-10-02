@@ -1,59 +1,180 @@
 # TaBello
 
-**TaBello** is an open-source, offline-first desktop application that turns video and audio files into musical notation and guitar/bass tablature — automatically, and entirely on your own computer.
+**Turn any recording into guitar, bass or ukulele tabs — entirely on your computer.**
 
-Drop in an `.mp4`, `.mov`, `.mp3`, `.wav` (or any format FFmpeg understands), and TaBello will:
+TaBello is a free, open-source desktop app. Give it an audio or video file (a lesson, a live clip, a demo
+you recorded) and it listens, detects the notes with a machine-learning model, and writes standard
+notation plus tablature you can play back, slow down and export. No account, no upload, no internet
+connection needed: your files never leave your machine.
 
-1. Extract the audio track locally with a bundled FFmpeg binary.
-2. Transcribe the notes with a machine-learning pitch-detection model running on your machine.
-3. Map the detected notes onto strings and frets.
-4. Render standard notation and tablature you can read, play back, and export.
+![Transcribe screen](docs/screenshots/transcribe.png)
 
 ## Features
 
-- **Any audio or video file** up to 15 minutes, via drag & drop or the file picker.
-- **Guitar, bass and ukulele**, written as standard notation + tablature, with common tunings (including the ukulele's re-entrant high-G tuning).
-- **Capo detection**: open-position shapes played higher up the neck are recognized, and the tab is written relative to the capo (adjustable by hand).
-- **Automatic tempo and key detection**; the tempo can be halved, doubled or typed in, and the score updates instantly.
-- **Playable fingerings**: notes are placed on strings/frets by an optimizer that keeps chord shapes compact and hand movement small.
-- **Notation + tablature** rendered with alphaTab, with synthesized playback, a cursor, a metronome and slow-down; tab numbers are colored by string.
-- **Stage-style design**: a dark theme with the Guitar Hero fret colors and animations (disabled automatically when the system asks for reduced motion).
-- **Original recording** (audio or video) playable next to the score.
-- **Export** to Guitar Pro 7 (`.gp`, opens in Guitar Pro, MuseScore, TuxGuitar), MIDI (`.mid`) and alphaTex.
-- **Local library** of all transcriptions, stored in the app's data folder.
+- **Guitar, bass and ukulele**, with common tunings: standard, drop D, half step down, D standard, DADGAD,
+  open G, 5-string bass, and ukulele high G / low G / D tuning / baritone.
+- **Automatic detection** of tempo, key, time signature (4/4, 3/4, or a triplet feel for swing and
+  shuffle; 6/8 can be chosen by hand), tuning (drop D, half step down, 5-string bass, low-G ukulele)
+  and **capo** — every guess can be overridden from a menu, and the score updates instantly.
+- **Chord names and diagrams** above the staff, named after the shapes you play (relative to the capo).
+- **Playing techniques** (experimental): bends and releases, hammer-ons and pull-offs, slides (between
+  notes, into and out of notes) and vibrato, recognized from the pitch contours and the pick attack.
+- **Tempo changes**: when a recording speeds up or slows down, the bar lines follow it and the score
+  carries the tempo changes (also in Guitar Pro and MIDI exports).
+- **Playable fingerings**: notes are placed on strings and frets by an optimizer that keeps chord shapes
+  compact and hand movement small.
+- **Notation + tablature** with synthesized playback, a cursor, a metronome, slow-down and loops.
+  Tab numbers are colored by string.
+- **Play along with the original recording** (audio or video): the score follows it, and you can loop a
+  passage and slow it down without changing its pitch.
+- **Edit the tab**: click a note to change its fret, string or pitch, or delete it; undo, or restore
+  the detected notes at any time.
+- **Isolate the instrument from a band recording** (optional): Demucs, a state-of-the-art source
+  separation model, extracts the bass or guitar part before transcription — still on your computer.
+- **Sample tracks** to try it right away: famous public-domain pieces (Greensleeves, Romance, Minuet in
+  G, Ode to Joy, When the Saints Go Marching In) and a blues lick, played by TaBello's own synthesizer.
+- **Export** to Guitar Pro 7 (`.gp` — opens in Guitar Pro, MuseScore, TuxGuitar), MIDI (`.mid`) and alphaTex.
+- **Local library** of all your transcriptions.
 
-## Principles
+![Sample tracks](docs/screenshots/samples.png)
 
-- **100% local.** No servers, no cloud APIs, no accounts. Your files never leave your machine.
-- **Offline-first.** Everything the app needs (FFmpeg, the ML model, fonts, soundfonts) ships inside the installer.
-- **Open source.** Free to use, study, and improve.
+| Capo and chords detected on a strummed part | Editing a ukulele tab |
+| --- | --- |
+| ![Project with capo and chord diagrams](docs/screenshots/project-capo.png) | ![Editing a note in a ukulele tab](docs/screenshots/ukulele-tab.png) |
 
-## Tech Stack
+## Download and install
 
-| Layer | Technology | Purpose |
-| --- | --- | --- |
-| Desktop shell | [Electron](https://www.electronjs.org/) | Cross-platform desktop app (Windows, macOS, Linux) |
-| Build tooling | [electron-vite](https://electron-vite.org/) + [Vite](https://vite.dev/) 7 | Bundles the main, preload, and renderer processes |
-| Packaging | [electron-builder](https://www.electron.build/) | Produces installers for each platform |
-| Language | TypeScript | Across main, preload, and renderer |
-| UI | React, Tailwind CSS, [shadcn/ui](https://ui.shadcn.com/) (Radix UI), lucide-react, Inter (bundled) | Renderer (frontend) |
-| Audio extraction | [`ffmpeg-static`](https://github.com/eugeneware/ffmpeg-static), driven via Node.js `child_process` | Bundled FFmpeg binary; decodes any audio/video file straight to 22.05 kHz mono PCM |
-| AI transcription | [`@spotify/basic-pitch`](https://github.com/spotify/basic-pitch-ts) | Polyphonic note detection (model bundled locally) |
-| ML runtime | [TensorFlow.js](https://www.tensorflow.org/js) with the WebAssembly backend (`@tensorflow/tfjs-backend-wasm`) | Runs the Basic Pitch model on the local CPU, no native binaries |
-| MIDI export | [`@tonejs/midi`](https://github.com/Tonejs/Midi) | Writes the detected notes as a standard MIDI file |
-| Notation & tabs | [alphaTab](https://alphatab.net/) (`@coderline/alphatab`) | Renders standard notation + tablature, with built-in playback |
-| Local storage | Node.js `fs` in the app's user-data directory | Saves projects (JSON) on disk |
-| Data fetching | TanStack Query | Caches IPC calls in the renderer |
-| Testing | Vitest, Playwright (Electron) | Unit/integration tests; end-to-end runs of the packaged app |
-| CI / releases | GitHub Actions | Checks every PR; builds installers for all platforms on tag push |
+Installers for Windows, macOS (Apple Silicon) and Linux will be published on the
+[Releases page](https://github.com/JackF007/taBello/releases); until the first release, run TaBello
+from source (see [Development](#development)). TaBello uses no paid code-signing certificates, so the
+first launch of an installed copy needs one extra click:
 
-### Architecture at a glance
+- **Windows**: on the SmartScreen prompt, click *More info → Run anyway*.
+- **macOS**: open the app once, then go to *System Settings → Privacy & Security* and click *Open Anyway*.
+- **Linux**: make the AppImage executable (`chmod +x TaBello-*.AppImage`) and run it.
+
+## How to use it
+
+1. **Pick your instrument** (guitar, bass or ukulele). For a full band recording, turn on **Isolate**
+   (the first time, TaBello offers to download the separation model, about 100 MB).
+2. **Drop a file** or click *Choose file* — or click **Try** on one of the sample tracks. Most audio and video formats work (MP3, WAV, FLAC, M4A, MP4,
+   MOV, MKV…), up to 15 minutes. Transcription takes a few seconds per minute of audio.
+3. **Check the result** on the project page:
+   - tuning, capo and time signature are detected (*Auto*); pick another value if a guess is wrong;
+   - if the tempo looks off by a factor of two, use **½×** or **2×**;
+   - press **Play** to hear the transcription, or switch the player to **Original** to hear the
+     recording while the cursor follows the score;
+   - drag over bars to select them and press **Loop** to practice a passage; lower the **Speed** to
+     slow it down (the recording keeps its pitch);
+   - turn on **Edit notes** and click a note to fix it: type a fret, use ↑/↓ for semitones, Alt+↑/↓ to
+     move it to another string, Delete to remove it, Ctrl+Z to undo. *Restore detected notes* brings
+     back the original transcription.
+4. **Export** to Guitar Pro or MIDI to keep editing in your favorite program.
+
+Keyboard: Space plays and pauses.
+
+### Getting the best results
+
+Automatic transcription is a starting point, not a finished tab. Accuracy depends a lot on the recording:
+
+- **Solo instrument recordings work best.** In a full band mix, vocals, drums and keys are heard too
+  and produce extra or wrong notes: turn on **Isolate**. On the bundled band sample, isolating the bass
+  raises the share of correct bass notes from 39% to 98%. Separation takes roughly as long as the song
+  (a few minutes on a laptop) and works best for bass; guitars are taken from Demucs' "other" part,
+  which also contains keyboards.
+- **Clean, close recordings beat distant or noisy ones.** Heavy distortion, reverb and effects make
+  notes harder to detect.
+- **Choose the right instrument before transcribing**: it sets the frequency range the model listens to.
+- **Sensitivity**: if you get too many stray notes, try *Strict*; if quiet notes are missing, try
+  *Sensitive*.
+- **Tuning matters**: drop D, half step down, 5-string bass and low-G ukulele are recognized; for other
+  tunings (DADGAD, open G…) select them by hand so the frets come out right.
+- **6/8**: TaBello does not guess compound meters; choose 6/8 and set the tempo in dotted quarters.
+- **Techniques** are detected from how each note starts and how its pitch moves. If you see hammer-ons
+  or slides that were not played (e.g. on a heavily compressed or effected recording), turn
+  *Techniques* off. If bar lines drift on a piece played to a click, turn *Tempo changes* off.
+
+### Known limitations
+
+- Rhythms are quantized to 16th notes, or to 8th-note triplets in the triplet feel; mixed rhythms
+  (triplets inside a straight 4/4) are approximated.
+- Playing techniques are inferred, not certain: palm mutes, harmonics, tapping and slides of one or two
+  frets (which look like bends) are not recognized.
+- Only notes can be edited (fret, string, pitch, delete); adding notes and changing rhythms is best done
+  after exporting to Guitar Pro, MuseScore or TuxGuitar.
+- Very fast passages and dense chords can lose notes; overtones can occasionally add an octave note.
+- Tempo changes are followed when they are gradual or sustained; rubato and free-time passages are not.
+- Isolation is limited to recordings of up to 10 minutes. Its model is downloaded separately because
+  its weights are for personal and research use only (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+
+## How it works
+
+1. **FFmpeg** extracts the audio track and converts it to 22.05 kHz mono. With *Isolate* on, it decodes
+   44.1 kHz stereo instead, and **[Demucs](https://github.com/facebookresearch/demucs)** (Hybrid
+   Transformer Demucs, run with ONNX Runtime's WebAssembly backend) separates the bass or the "other"
+   part (guitars) from vocals and drums first.
+2. **[Basic Pitch](https://github.com/spotify/basic-pitch-ts)**, Spotify's polyphonic note-detection model,
+   runs locally with TensorFlow.js (WebAssembly backend) and lists the notes it hears.
+3. TaBello cleans the result: it removes quiet overtones and merges the phantom re-attacks the model
+   reports for notes that are still ringing. From Basic Pitch's pitch contours and the audio's pick
+   clicks it measures how each note was played: attack strength, bends, glides and vibrato.
+4. It estimates the **tempo** (onset periodicity, then a dynamic-programming beat tracker for tempo
+   changes), **key** (Krumhansl–Schmuckler profiles) and **time
+   signature** (does the off-beat fit a straight or a triplet grid? do accents and bass notes repeat
+   every three or four beats?), then quantizes the notes to that grid with bar lines on the downbeats.
+5. It detects the **tuning** and **capo** by comparing how playable the part is under each candidate, and
+   chooses strings and frets with a Viterbi search that balances easy shapes against hand movement
+   (notes played legato stay on one string). Unpicked notes become hammer-ons, pull-offs or slides.
+6. It names the **chords** from the notes struck together, and **[alphaTab](https://alphatab.net/)**
+   renders the notation, tablature and chord diagrams and plays them back — with its own synthesizer
+   or by following the original recording.
+
+Everything runs on your machine; transcription happens in a separate background process so the
+window stays responsive.
+
+## Development
+
+Requirements: [Node.js](https://nodejs.org/) 22.12 or newer and Git. On Windows, the
+[Microsoft Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)
+is also needed to unpack Electron during `npm install`.
+
+```sh
+git clone https://github.com/JackF007/taBello.git
+cd taBello
+npm install        # also downloads the Electron binary for your OS
+npm run dev        # start the app with hot reload
+```
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Run the app in development mode |
+| `npm test` | Unit and integration tests (includes a real FFmpeg + Basic Pitch run) |
+| `npm run benchmark` | Accuracy benchmark on [GuitarSet](#measuring-accuracy) |
+| `npm run samples` | Regenerate the sample tracks in `resources/samples/` from `scripts/samples/scores.ts` |
+| `npm run test:e2e` | Build, then drive the real app with Playwright |
+| `npm run lint` / `npm run typecheck` | ESLint / TypeScript checks |
+| `npm run build` | Production build into `out/` |
+| `npm run dist` | Build an installer for the current OS into `release/` |
+
+Tests that need the separation model are skipped unless you point `TABELLO_DEMUCS_MODEL` at an
+`htdemucs.onnx` file (e.g. the one the app downloaded into its data folder, under `models/`).
+
+If `npm install` fails on Windows with `Cannot find native binding`, install the Visual C++
+Redistributable (`winget install Microsoft.VCRedist.2015+.x64`) and run `npx install-electron`.
+
+### Tech stack
+
+Electron, React, TypeScript, Vite (electron-vite), Tailwind CSS with shadcn/ui, FFmpeg, TensorFlow.js
+with Spotify Basic Pitch, alphaTab, @tonejs/midi, Vitest, Playwright and GitHub Actions.
+
+### Architecture
 
 ```
 ┌──────────────────────────── Renderer (React) ────────────────────────────┐
 │ Transcribe · Library · Project pages                                     │
-│ Music engine (pure TS): tempo & key detection → 16th-note quantization → │
-│ Viterbi fingering → alphaTex → alphaTab score/playback · MIDI/GP export  │
+│ Music engine (pure TS): tempo, key & meter detection → quantization →    │
+│ tuning & capo detection → Viterbi fingering → chord names → alphaTex →   │
+│ alphaTab (synth or play-along) · note editing · MIDI/GP export           │
 └───────────────▲──────────────────────────────────────────────┬───────────┘
                 │ window.tabello.* (typed API via contextBridge)│
 ┌───────────────┴──────────────── Preload ─────────────────────▼───────────┐
@@ -61,24 +182,16 @@ Drop in an `.mp4`, `.mov`, `.mp3`, `.wav` (or any format FFmpeg understands), an
 └───────────────▲──────────────────────────────────────────────┬───────────┘
                 │ ipcRenderer.invoke / progress events          │
 ┌───────────────┴───────────────── Main process ───────────────▼───────────┐
-│ IPC handlers (sender + input validation) · project store (JSON files)    │
+│ IPC handlers (sender + input validation) · project store (JSON files,    │
+│ original notes kept when edited)                                         │
 │ app:// protocol (renderer + CSP) · tabello-media:// (original file,      │
 │ HTTP range requests) · save dialogs · job manager (one job, cancellable) │
 │        └── utilityProcess, one per job:                                  │
-│            FFmpeg → 22.05 kHz mono PCM → Basic Pitch (TF.js WASM)        │
-│            → harmonic filtering + re-trigger merging → notes             │
+│            FFmpeg → [Demucs (ONNX Runtime WASM): isolate the instrument] │
+│            → 22.05 kHz mono PCM → Basic Pitch (TF.js WASM)               │
+│            → overtone filtering + re-attack merging → notes              │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
-
-### Why these choices
-
-- **No `fluent-ffmpeg`:** it is deprecated upstream. TaBello only needs one FFmpeg invocation (decode to raw PCM), so it spawns the bundled binary directly.
-- **WASM instead of `tfjs-node`:** both were benchmarked inside an Electron 44 `utilityProcess` and produced identical notes. `tfjs-node` was ~3x faster (3.3 s vs 9.5 s for 60 s of audio on 4 cores), but it is unmaintained, needs patches to load on Electron's Node.js 24, and adds ~390 MB of platform-specific native code. The WASM backend is under 1 MB, cross-platform, and fast enough; `tfjs-node` can be added later as an optional accelerator.
-- **Bundled worker:** the transcription worker is bundled with Vite, using only `tfjs-core`, `tfjs-converter` and the WASM backend (the TF.js npm packages ship every build variant, ~290 MB). The app archive went from 299 MB to 22 MB; the Linux AppImage is ~160 MB, most of it Electron and FFmpeg.
-- **alphaTab only:** it renders standard notation and tablature and plays them back, so VexFlow is not needed. alphaTab cannot import MIDI, so detected notes are converted to alphaTex; `@tonejs/midi` is used for MIDI export.
-- **Post-processing Basic Pitch:** on a synthetic plucked-string test (riff + strummed chords, 53 notes) the raw model output with default thresholds has precision 0.48 / recall 0.89. Slightly stricter thresholds, dropping quiet overtones and merging the phantom re-onsets of still-ringing notes bring it to 0.83 / 0.85. This is guarded by a regression test; real recordings will vary, which is why the sensitivity is adjustable.
-
-## Project Structure
 
 ```
 src/
@@ -87,46 +200,84 @@ src/
 │   ├── ipc.ts            IPC handlers (validated)
 │   ├── protocols.ts      app:// and tabello-media:// schemes
 │   ├── projects.ts       local project library
+│   ├── separation/       Demucs source separation, model download/import
 │   └── transcription/    utility-process worker, FFmpeg + Basic Pitch pipeline
 ├── preload/              contextBridge API exposed as window.tabello
 ├── shared/               IPC contract and instrument/tuning presets
 └── renderer/             React app
-    └── src/lib/music/    tempo/key detection, arrangement, alphaTex/MIDI/GP export
+    └── src/lib/music/    detection (tempo, key, meter, tuning, capo, chords), arrangement,
+                          note editing, alphaTex/MIDI/GP export
+benchmark/                GuitarSet accuracy benchmark
+resources/samples/        sample tracks (generated by scripts/generate-samples.ts)
+e2e/                      Playwright tests of the desktop app
 ```
 
-## How to run
+### Design decisions
 
-Requirements: Node.js 22.12+ and npm.
+- **No `fluent-ffmpeg`**: it is deprecated upstream; TaBello spawns the bundled FFmpeg binary directly.
+- **WebAssembly instead of `tfjs-node`**: same results, under 1 MB instead of ~390 MB of unmaintained
+  native code, and no platform-specific builds. `tfjs-node` was ~3× faster in a benchmark and could
+  come back as an optional accelerator.
+- **Bundled worker**: only `tfjs-core`, `tfjs-converter` and the WASM backend are shipped (the app
+  archive went from 299 MB to 22 MB).
+- **alphaTab** renders notation and tablature and plays them back. It cannot import MIDI, so detected
+  notes are converted to alphaTex.
+- **Measured post-processing**: on a synthetic plucked-string test (riff + strummed chords, 53 notes),
+  raw Basic Pitch output has precision 0.48 / recall 0.89; TaBello's thresholds, overtone filtering and
+  re-attack merging bring it to 0.83 / 0.85. A regression test guards these numbers.
+
+### Measuring accuracy
+
+[GuitarSet](https://guitarset.weebly.com/) (360 annotated guitar recordings, CC BY 4.0) can be used to
+measure TaBello's accuracy. Download and unzip `annotation` and `audio_mono-mic` into one folder, then:
 
 ```sh
-npm install
-npm run dev        # start the app with hot reload
-npm test           # unit + integration tests (includes a real FFmpeg + Basic Pitch run)
-npm run test:e2e   # builds, then drives the Electron app with Playwright
-npm run lint
-npm run typecheck  # type-check main, preload and renderer
-npm run build      # production build into out/
-npm run dist       # build an installer for the current OS into release/
+GUITARSET_DIR=/path/to/GuitarSet npm run benchmark
+# optional: GUITARSET_LIMIT=20, GUITARSET_FILTER=solo, GUITARSET_SENSITIVITY=high,
+#           GUITARSET_AUDIO=audio_hex-pickup_debleeded (cleaner pickup audio)
 ```
 
-`npm install` also downloads the Electron binary for your OS (`postinstall`).
+It reports note precision, recall and F1 (correct pitch, onset within 50 ms) and the share of correctly
+detected notes placed on the string the guitarist actually used — both for the whole pipeline and for
+the fingering optimizer alone (arranging the annotated notes). Results are also written to
+`benchmark/results/`. Please share your numbers in an issue when you change the pipeline.
 
-**Windows:** if that step fails with `Cannot find native binding`, install the Microsoft Visual C++ Redistributable (`winget install Microsoft.VCRedist.2015+.x64`), then run `npx install-electron`.
+### Releases
 
-## Distribution (zero cost)
+Releases are built for free by GitHub Actions: push a tag matching the version in `package.json`
+(e.g. `git tag v0.1.0 && git push origin v0.1.0`) and installers for Windows, macOS and Linux are
+attached to a draft GitHub Release. Builds are unsigned (macOS ad-hoc signed); free code signing for
+open-source projects such as [SignPath Foundation](https://signpath.org/) can remove the Windows warning.
 
-Releases are built by GitHub Actions on free runners: push a tag matching the version in `package.json` (e.g. `git tag v0.1.0 && git push origin v0.1.0`) and installers for Windows, macOS (Apple Silicon) and Linux are attached to a draft GitHub Release. No paid services or certificates are used, so the first launch needs one extra step:
+## Roadmap
 
-- **macOS** (ad-hoc signed, not notarized): open the app, then go to *System Settings → Privacy & Security* and click *Open Anyway*.
-- **Windows** (unsigned): on the SmartScreen prompt, click *More info → Run anyway*.
-- **Linux**: `chmod +x TaBello-*.AppImage` and run it.
+Ideas, roughly by priority — contributions welcome:
 
-Free code signing for open-source projects (e.g. [SignPath Foundation](https://signpath.org/) for Windows) can remove the Windows warning later. Apple notarization requires a paid Apple Developer account.
+- [x] Accuracy benchmark tool for [GuitarSet](https://guitarset.weebly.com/) (publish baseline numbers)
+- [x] Play along with the original recording: synced cursor, A–B loop, slow-down without pitch change
+- [x] Detect drop D, half step down, 5-string bass and low-G ukulele
+- [x] Chord names and chord diagrams
+- [x] Triplets, swing, 3/4 and 6/8
+- [x] Edit notes directly in the tab
+- [ ] Tune thresholds and fingering costs on GuitarSet
+- [x] Optional source separation to isolate the guitar or bass from a full mix (Demucs via ONNX
+  Runtime, model downloaded on demand)
+- [ ] A dedicated guitar stem (Demucs 6-source model) and GPU acceleration (WebGPU/DirectML)
+- [ ] Detect recordings tuned off A = 440 Hz (e.g. 432 Hz) from pitch bends
+- [x] Write techniques: bends, slides, hammer-ons, pull-offs, vibrato (experimental)
+- [x] Tempo changes within a piece
+- [ ] Add notes and change rhythms in the editor
 
 ## Contributing
 
-Contributions, issues, and ideas are welcome. Please open an issue to discuss larger changes before submitting a pull request.
+Bug reports, transcription examples and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+For a transcription that came out wrong, a short clip (a few seconds) plus the settings you used helps most.
 
 ## License
 
-To be defined. Note that the bundled FFmpeg binary (`ffmpeg-static`) is distributed under the GPL, which must be taken into account when choosing the project license.
+TaBello is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License v3.0 or later](LICENSE).
+
+It builds on many open-source projects — FFmpeg (GPL-3.0), Spotify Basic Pitch and TensorFlow.js
+(Apache-2.0), alphaTab (MPL-2.0), Electron and React (MIT), and fonts under the SIL Open Font License.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list and their licenses.

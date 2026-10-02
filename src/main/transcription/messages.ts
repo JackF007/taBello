@@ -1,5 +1,6 @@
 import type { ErrorCode, NoteEvent, Sensitivity, TranscriptionProgress } from '../../shared/ipc';
 import type { InstrumentId } from '../../shared/instruments';
+import type { DemucsSource } from '../separation/demucs';
 
 /** Main → transcription worker. */
 export interface WorkerRequest {
@@ -7,6 +8,8 @@ export interface WorkerRequest {
   ffmpegPath: string;
   instrument: InstrumentId;
   sensitivity: Sensitivity;
+  /** Isolate one source with Demucs before detecting notes. */
+  separation?: { modelPath: string; source: DemucsSource };
 }
 
 /** Transcription worker → main. */

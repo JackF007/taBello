@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, Loader2, Sparkles } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Pencil, RotateCcw, Sparkles, Trash2, Undo2 } from 'lucide-react';
 import InstrumentIcon from '@/components/InstrumentIcon';
 import ScoreView from '@/components/ScoreView';
 import { Button } from '@/components/ui/button';
@@ -14,15 +14,19 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Toggle } from '@/components/ui/toggle';
 import { useToast } from '@/hooks/use-toast';
 import { requireApi } from '@/lib/api';
 import { formatDate, formatDuration, isVideoFile } from '@/lib/format';
-import { arrange, detectCapo } from '@/lib/music/arrange';
+import { arrange, detectCapo, detectTuning } from '@/lib/music/arrange';
+import { applyEdit, findNote, type NoteEdit, type NoteLocation } from '@/lib/music/edit';
 import { toAlphaTex, toMidi } from '@/lib/music/export';
 import { toGuitarPro } from '@/lib/music/guitarPro';
-import { detectKey, estimateTempo } from '@/lib/music/theory';
-import { projectMediaUrl, type ExportFormat, type Project, type ProjectSettings } from '../../../shared/ipc';
+import { detectTempoChanges } from '@/lib/music/tempo';
+import { alphaTexPitch, detectKey, detectMeter, estimateTempo } from '@/lib/music/theory';
+import { projectMediaUrl, type ExportFormat, type NoteEvent, type Project, type ProjectSettings } from '../../../shared/ipc';
 import { getTuning, INSTRUMENTS, MAX_CAPO, type InstrumentId } from '../../../shared/instruments';
+import { METERS, type MeterId } from '../../../shared/meters';
 
 const EXPORTS: { format: ExportFormat; label: string }[] = [
   { format: 'gp', label: 'Guitar Pro 7 (.gp)' },
@@ -42,39 +46,77 @@ const Field = ({ label, htmlFor, children }: { label: string; htmlFor?: string; 
   </div>
 );
 
+/** Scientific pitch name, e.g. "E4", for the note editor. */
+const pitchName = (midi: number) => {
+  const name = alphaTexPitch(midi);
+  return name[0].toUpperCase() + name.slice(1).replace('#', '♯');
+};
+const STRING_NAMES = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
+
 const ProjectEditor = ({ project }: { project: Project }) => {
   const [settings, setSettings] = useState<ProjectSettings>(project.settings);
+  const [notes, setNotes] = useState<NoteEvent[]>(project.notes);
+  const [edited, setEdited] = useState(project.edited);
+  const [history, setHistory] = useState<NoteEvent[][]>([]);
+  const [editing, setEditing] = useState(false);
+  const [selected, setSelected] = useState<NoteLocation | null>(null);
+  const [media, setMedia] = useState<HTMLMediaElement | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const saveTimer = useRef<number>();
+  const notesTimer = useRef<number>();
 
-  const detectedTempo = useMemo(() => estimateTempo(project.notes), [project.notes]);
-  const key = useMemo(() => detectKey(project.notes), [project.notes]);
+  // Detection runs on the notes as opened, so hand edits do not shift the tempo or bar lines.
+  const detectionNotes = useRef(project.notes).current;
+  const detectedTempo = useMemo(() => estimateTempo(detectionNotes), [detectionNotes]);
+  const steadyMeter = useMemo(() => detectMeter(detectionNotes, detectedTempo), [detectionNotes, detectedTempo]);
+  const key = useMemo(() => detectKey(detectionNotes), [detectionNotes]);
   const instrument = INSTRUMENTS[settings.instrument];
-  const tuning = getTuning(settings.instrument, settings.tuningId);
   const bpm = settings.tempo ?? detectedTempo.bpm;
-  const timing = useMemo(() => ({ bpm, offset: detectedTempo.offset }), [bpm, detectedTempo.offset]);
+  // Tempo changes are tracked around the chosen tempo, so ½× and 2× still apply.
+  const tempoChanges = useMemo(
+    () => (settings.tempoChanges && detectionNotes.length > 0 ? detectTempoChanges(detectionNotes, bpm) : null),
+    [settings.tempoChanges, detectionNotes, bpm],
+  );
+  const beats = tempoChanges?.variable ? tempoChanges.beats : undefined;
+  const detectedMeter = useMemo(
+    () => (beats ? detectMeter(detectionNotes, detectedTempo, beats) : steadyMeter),
+    [beats, detectionNotes, detectedTempo, steadyMeter],
+  );
+  const meterId: MeterId = settings.meter ?? detectedMeter.meter;
+  const meter = METERS[meterId];
+  const timing = useMemo(() => {
+    // Downbeats found for the detected meter still apply to a chosen meter with as many beats per bar.
+    const barPhase = METERS[detectedMeter.meter].beatsPerBar === meter.beatsPerBar ? detectedMeter.barPhase : 0;
+    return { bpm, offset: steadyMeter.offset, beats, meter: meterId, barPhase };
+  }, [bpm, steadyMeter, beats, detectedMeter, meter, meterId]);
   const [tempoText, setTempoText] = useState(String(bpm));
   useEffect(() => setTempoText(String(bpm)), [bpm]);
 
+  const detectedTuning = useMemo(
+    () => detectTuning(detectionNotes, instrument.tunings, { frets: instrument.frets, ...timing }),
+    [detectionNotes, instrument, timing],
+  );
+  const tuning = settings.tuningId === null ? detectedTuning : getTuning(settings.instrument, settings.tuningId);
   const detectedCapo = useMemo(
-    () => detectCapo(project.notes, { tuning: tuning.strings, frets: instrument.frets, ...timing }, MAX_CAPO),
-    [project.notes, tuning, instrument, timing],
+    () => detectCapo(detectionNotes, { tuning: tuning.strings, frets: instrument.frets, ...timing }, MAX_CAPO),
+    [detectionNotes, tuning, instrument, timing],
   );
   const capo = settings.capo ?? detectedCapo;
 
   const arrangement = useMemo(
-    () => arrange(project.notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo }),
-    [project.notes, instrument, tuning, timing, capo],
+    () => arrange(notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo, techniques: settings.techniques }),
+    [notes, instrument, tuning, timing, capo, settings.techniques],
   );
   const tex = useMemo(
-    () => toAlphaTex(arrangement, { title: project.title, bpm, key, instrument, tuning: tuning.strings, capo }),
-    [arrangement, project.title, bpm, key, instrument, tuning, capo],
+    () => toAlphaTex(arrangement, { title: project.title, bpm, key, instrument, tuning: tuning.strings, capo, chords: settings.chords }),
+    [arrangement, project.title, bpm, key, instrument, tuning, capo, settings.chords],
   );
 
   // Settings apply instantly; saving to disk is debounced.
   const updateSettings = (next: ProjectSettings) => {
     setSettings(next);
+    setSelected(null);
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
       const result = await requireApi().updateProjectSettings(project.id, next);
@@ -82,7 +124,94 @@ const ProjectEditor = ({ project }: { project: Project }) => {
       else toast({ title: 'Could not save settings', description: result.error.message, variant: 'destructive' });
     }, 400);
   };
-  useEffect(() => () => window.clearTimeout(saveTimer.current), []);
+
+  const saveNotes = (next: NoteEvent[]) => {
+    setNotes(next);
+    setEdited(true);
+    window.clearTimeout(notesTimer.current);
+    notesTimer.current = window.setTimeout(async () => {
+      const result = await requireApi().updateProjectNotes(project.id, next);
+      if (result.ok) void queryClient.invalidateQueries({ queryKey: ['projects'] });
+      else toast({ title: 'Could not save your edits', description: result.error.message, variant: 'destructive' });
+    }, 600);
+  };
+  useEffect(
+    () => () => {
+      window.clearTimeout(saveTimer.current);
+      window.clearTimeout(notesTimer.current);
+    },
+    [],
+  );
+
+  const selectedNote = selected && findNote(arrangement, selected);
+  const editContext = { tuning: tuning.strings, capo, frets: instrument.frets };
+
+  const edit = (change: NoteEdit) => {
+    if (!selected || !selectedNote) return;
+    const result = applyEdit(notes, selectedNote, selected, change, editContext);
+    if (!result) {
+      toast({ title: "Can't play that", description: 'That note does not fit on this string or neck.' });
+      return;
+    }
+    setHistory((h) => [...h.slice(-99), notes]);
+    setSelected(result.location);
+    saveNotes(result.notes);
+  };
+
+  const undo = () => {
+    const previous = history.at(-1);
+    if (!previous) return;
+    setHistory((h) => h.slice(0, -1));
+    setSelected(null);
+    saveNotes(previous);
+  };
+
+  const restoreDetected = async () => {
+    window.clearTimeout(notesTimer.current);
+    const result = await requireApi().resetProjectNotes(project.id);
+    if (!result.ok) {
+      toast({ title: 'Could not restore the notes', description: result.error.message, variant: 'destructive' });
+      return;
+    }
+    setHistory((h) => [...h.slice(-99), notes]);
+    setNotes(result.value);
+    setEdited(false);
+    setSelected(null);
+    void queryClient.invalidateQueries({ queryKey: ['projects'] });
+  };
+
+  // Keyboard editing: arrows move by a semitone (or between strings with Alt), digits type a fret.
+  const fretTyping = useRef<{ text: string; at: number }>({ text: '', at: 0 });
+  useEffect(() => {
+    if (!editing) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if (!selected || !selectedNote) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') edit({ type: 'delete' });
+      else if (e.key === 'ArrowUp' && e.altKey) edit({ type: 'string', string: selected.string + 1 });
+      else if (e.key === 'ArrowDown' && e.altKey) edit({ type: 'string', string: selected.string - 1 });
+      else if (e.key === 'ArrowUp') edit({ type: 'pitch', delta: 1 });
+      else if (e.key === 'ArrowDown') edit({ type: 'pitch', delta: -1 });
+      else if (e.key === 'Escape') setSelected(null);
+      else if (/^[0-9]$/.test(e.key)) {
+        // Two digits typed quickly make a two-digit fret.
+        const now = Date.now();
+        const typing = fretTyping.current;
+        const text = now - typing.at < 800 && typing.text.length === 1 ? typing.text + e.key : e.key;
+        fretTyping.current = { text, at: now };
+        edit({ type: 'fret', fret: Number(text) });
+      } else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   const commitTempo = () => {
     const value = Number(tempoText);
@@ -93,7 +222,7 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const exportAs = async (format: ExportFormat) => {
     try {
       const data =
-        format === 'midi' ? toMidi(project.notes, { title: project.title, bpm, instrument })
+        format === 'midi' ? toMidi(notes, { title: project.title, bpm: bpm * meter.quartersPerBeat, instrument }, arrangement)
         : format === 'gp' ? toGuitarPro(tex)
         : new TextEncoder().encode(tex);
       const result = await requireApi().exportFile({ format, suggestedName: project.title, data });
@@ -118,7 +247,8 @@ const ProjectEditor = ({ project }: { project: Project }) => {
           </Link>
           <h1 className="text-3xl truncate">{project.title}</h1>
           <p className="text-sm text-muted-foreground">
-            {project.sourceName} · {formatDuration(project.durationSeconds)} · {project.noteCount} notes · {formatDate(project.createdAt)}
+            {project.sourceName} · {formatDuration(project.durationSeconds)} · {notes.length} notes · {formatDate(project.createdAt)}
+            {project.isolated && ` · ${instrument.name.toLowerCase()} isolated from the mix`}
           </p>
         </div>
         <DropdownMenu>
@@ -143,7 +273,7 @@ const ProjectEditor = ({ project }: { project: Project }) => {
             value={settings.instrument}
             onValueChange={(value) => {
               const id = value as InstrumentId;
-              updateSettings({ ...settings, instrument: id, tuningId: INSTRUMENTS[id].tunings[0].id });
+              updateSettings({ ...settings, instrument: id, tuningId: null, capo: null });
             }}
           >
             <SelectTrigger id="instrument" className="w-[150px]"><SelectValue /></SelectTrigger>
@@ -154,9 +284,13 @@ const ProjectEditor = ({ project }: { project: Project }) => {
         </Field>
 
         <Field label="Tuning" htmlFor="tuning">
-          <Select value={tuning.id} onValueChange={(tuningId) => updateSettings({ ...settings, tuningId })}>
-            <SelectTrigger id="tuning" className="w-[250px]"><SelectValue /></SelectTrigger>
+          <Select
+            value={settings.tuningId ?? 'auto'}
+            onValueChange={(value) => updateSettings({ ...settings, tuningId: value === 'auto' ? null : value })}
+          >
+            <SelectTrigger id="tuning" className="w-[260px]"><SelectValue /></SelectTrigger>
             <SelectContent>
+              <SelectItem value="auto">Auto ({detectedTuning.name})</SelectItem>
               {instrument.tunings.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -178,7 +312,20 @@ const ProjectEditor = ({ project }: { project: Project }) => {
           </Select>
         </Field>
 
-        <Field label="Tempo (BPM)" htmlFor="tempo">
+        <Field label="Time signature" htmlFor="meter">
+          <Select
+            value={settings.meter ?? 'auto'}
+            onValueChange={(value) => updateSettings({ ...settings, meter: value === 'auto' ? null : (value as MeterId) })}
+          >
+            <SelectTrigger id="meter" className="w-[190px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto ({METERS[detectedMeter.meter].name})</SelectItem>
+              {Object.values(METERS).map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label={meter.quartersPerBeat === 1 ? 'Tempo (BPM)' : 'Tempo (dotted ♩)'} htmlFor="tempo">
           <div className="flex items-center gap-1">
             <Input
               id="tempo"
@@ -201,11 +348,46 @@ const ProjectEditor = ({ project }: { project: Project }) => {
               Auto
             </Button>
           </div>
+          {beats && tempoChanges && (
+            <p className="text-xs text-muted-foreground" data-testid="tempo-range">
+              Varies {tempoChanges.range[0]}–{tempoChanges.range[1]} BPM
+            </p>
+          )}
         </Field>
 
         <Field label="Key">
           <p className="h-10 flex items-center font-display text-lg">{key.name}</p>
         </Field>
+
+        <Toggle
+          pressed={settings.chords}
+          onPressedChange={(chords) => updateSettings({ ...settings, chords })}
+          aria-label="Chord names"
+          title="Show chord names and diagrams"
+          className="h-10 self-end rounded-full border px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+        >
+          Chords
+        </Toggle>
+
+        <Toggle
+          pressed={settings.techniques}
+          onPressedChange={(techniques) => updateSettings({ ...settings, techniques })}
+          aria-label="Techniques"
+          title="Write bends, slides, hammer-ons, pull-offs and vibrato (experimental)"
+          className="h-10 self-end rounded-full border px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+        >
+          Techniques
+        </Toggle>
+
+        <Toggle
+          pressed={settings.tempoChanges}
+          onPressedChange={(tempoChanges) => updateSettings({ ...settings, tempoChanges })}
+          aria-label="Follow tempo changes"
+          title="Follow the recording when it speeds up or slows down (otherwise the tempo is constant)"
+          className="h-10 self-end rounded-full border px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+        >
+          Tempo changes
+        </Toggle>
 
         {capo > 0 && (
           <span
@@ -220,9 +402,9 @@ const ProjectEditor = ({ project }: { project: Project }) => {
 
       {project.sourceAvailable ? (
         isVideoFile(project.sourceName) ? (
-          <video controls src={mediaUrl} className="w-full max-h-72 rounded-2xl bg-black border" aria-label="Original recording" />
+          <video ref={setMedia} controls src={mediaUrl} className="w-full max-h-72 rounded-2xl bg-black border" aria-label="Original recording" />
         ) : (
-          <audio controls src={mediaUrl} className="w-full" aria-label="Original recording" />
+          <audio ref={setMedia} controls src={mediaUrl} className="w-full" aria-label="Original recording" />
         )
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -230,7 +412,84 @@ const ProjectEditor = ({ project }: { project: Project }) => {
         </p>
       )}
 
-      <ScoreView tex={tex} />
+      <ScoreView
+        tex={tex}
+        media={media}
+        mediaOffset={arrangement.startTime}
+        onNoteClick={editing ? setSelected : undefined}
+        selected={editing ? selected : null}
+        controls={
+          <Toggle
+            pressed={editing}
+            onPressedChange={(on) => {
+              setEditing(on);
+              setSelected(null);
+            }}
+            aria-label="Edit notes"
+            className="h-11 rounded-full px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+          >
+            <Pencil className="h-4 w-4 mr-1" /> Edit notes
+          </Toggle>
+        }
+        toolbar={
+          editing && (
+            <>
+              {!selectedNote && (
+                <span className="text-sm text-muted-foreground">Click a note in the score to change or delete it.</span>
+              )}
+              {selected && selectedNote && (
+                <div className="flex flex-wrap items-center gap-3 text-sm" aria-label="Selected note">
+                  <span className="font-display text-base" data-testid="selected-note-info">
+                    {pitchName(selectedNote.pitch)}
+                  </span>
+                  <span className="text-muted-foreground">bar {selected.bar + 1}</span>
+                  <Label htmlFor="note-fret" className="text-muted-foreground">Fret</Label>
+                  <Input
+                    key={`${selected.bar}-${selected.beat}-${selected.string}-${selectedNote.fret}`}
+                    id="note-fret"
+                    className="h-9 w-16"
+                    type="number"
+                    min={0}
+                    max={instrument.frets - capo}
+                    defaultValue={selectedNote.fret}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    onBlur={(e) => {
+                      const fret = Number(e.currentTarget.value);
+                      if (Number.isInteger(fret) && fret !== selectedNote.fret) edit({ type: 'fret', fret });
+                    }}
+                  />
+                  <Label htmlFor="note-string" className="text-muted-foreground">String</Label>
+                  <Select value={String(selected.string)} onValueChange={(value) => edit({ type: 'string', string: Number(value) })}>
+                    <SelectTrigger id="note-string" className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {tuning.strings.map((open, string) => (
+                        <SelectItem key={string} value={String(string)}>
+                          {STRING_NAMES[tuning.strings.length - 1 - string] ?? `${tuning.strings.length - string}th`} ({pitchName(open + capo).replace(/\d+$/, '')})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" size="sm" onClick={() => edit({ type: 'pitch', delta: -1 })} title="Down a semitone (↓)">−½</Button>
+                  <Button variant="outline" size="sm" onClick={() => edit({ type: 'pitch', delta: 1 })} title="Up a semitone (↑)">+½</Button>
+                  <Button variant="outline" size="sm" onClick={() => edit({ type: 'delete' })} title="Delete (Del)" aria-label="Delete note">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <Button variant="ghost" size="sm" disabled={history.length === 0} onClick={undo} title="Undo (Ctrl+Z)">
+                  <Undo2 className="h-4 w-4 mr-1" /> Undo
+                </Button>
+                {edited && (
+                  <Button variant="ghost" size="sm" onClick={() => void restoreDetected()} title="Discard all edits">
+                    <RotateCcw className="h-4 w-4 mr-1" /> Restore detected notes
+                  </Button>
+                )}
+              </div>
+            </>
+          )
+        }
+      />
 
       <p className="text-xs text-muted-foreground">
         Automatic transcription is a starting point: check it by ear.{' '}

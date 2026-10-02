@@ -5,6 +5,8 @@ import type { IpcResult, NoteEvent, Sensitivity, TranscriptionProgress } from '.
 import type { InstrumentId } from '../../shared/instruments';
 import type { WorkerMessage, WorkerRequest } from './messages';
 
+export type SeparationJob = NonNullable<WorkerRequest['separation']>;
+
 const WORKER_PATH = path.join(import.meta.dirname, 'transcriptionWorker.js');
 
 export interface TranscriptionOutput {
@@ -35,6 +37,7 @@ export function transcribe(
   instrument: InstrumentId,
   sensitivity: Sensitivity,
   onProgress: (progress: TranscriptionProgress) => void,
+  separation?: SeparationJob,
 ): Promise<IpcResult<TranscriptionOutput>> {
   if (active) {
     return Promise.resolve({ ok: false, error: { code: 'busy', message: 'Another transcription is already running.' } });
@@ -70,7 +73,7 @@ export function transcribe(
     });
 
     onProgress({ stage: 'starting', fraction: 0 });
-    const request: WorkerRequest = { inputPath, ffmpegPath: binary, instrument, sensitivity };
+    const request: WorkerRequest = { inputPath, ffmpegPath: binary, instrument, sensitivity, separation };
     child.once('spawn', () => child.postMessage(request));
   });
 }

@@ -2,11 +2,16 @@
   "name": "tabello",
   "productName": "TaBello",
   "version": "0.1.0",
-  "description": "Offline-first desktop app that turns audio and video into notation and tablature.",
+  "description": "Offline desktop app that turns audio and video recordings into guitar, bass and ukulele tabs.",
+  "license": "GPL-3.0-or-later",
   "author": "TaBello contributors",
+  "homepage": "https://github.com/JackF007/taBello",
   "repository": {
     "type": "git",
     "url": "https://github.com/JackF007/taBello.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JackF007/taBello/issues"
   },
   "private": true,
   "type": "module",
@@ -21,6 +26,8 @@
     "dist": "electron-vite build && electron-builder --publish never",
     "dist:dir": "electron-vite build && electron-builder --dir --publish never",
     "test": "vitest run",
+    "benchmark": "vitest run --config vitest.benchmark.config.ts",
+    "samples": "vite-node scripts/generate-samples.ts",
     "test:e2e": "electron-vite build && playwright test"
   },
   "dependencies": {
@@ -89,6 +96,7 @@
     "input-otp": "^1.2.4",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
+    "onnxruntime-web": "1.23.2",
     "postcss": "^8.4.47",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
