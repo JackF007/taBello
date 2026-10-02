@@ -9,6 +9,7 @@ import { loadGraphModel } from '@tensorflow/tfjs-converter';
 import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
 import type { ErrorCode, NoteEvent, Sensitivity } from '../../shared/ipc';
 import { MAX_DURATION_SECONDS } from '../../shared/ipc';
+import { analyzeArticulation, mergeBends, packContour, transientEnvelope } from './articulation';
 
 /** Basic Pitch expects mono audio at this rate. */
 export const SAMPLE_RATE = 22050;
@@ -36,6 +37,11 @@ export class PipelineError extends Error {
 export interface DecodeOptions {
   signal?: AbortSignal;
   onProgress?: (fraction: number) => void;
+  /** Output format: mono at 22.05 kHz (Basic Pitch) unless set; channels come interleaved. */
+  sampleRate?: number;
+  channels?: number;
+  /** Longest accepted input. */
+  maxSeconds?: number;
 }
 
 function parseTimestamp(value: string): number {
@@ -43,15 +49,19 @@ function parseTimestamp(value: string): number {
   return h * 3600 + m * 60 + s;
 }
 
-/** Decodes the first audio stream of any FFmpeg-readable file to mono 32-bit float PCM at 22.05 kHz. */
+/** Decodes the first audio stream of any FFmpeg-readable file to 32-bit float PCM (mono 22.05 kHz by default). */
 export function decodeAudio(ffmpegPath: string, inputPath: string, options: DecodeOptions = {}): Promise<Float32Array> {
+  const rate = options.sampleRate ?? SAMPLE_RATE;
+  const channels = options.channels ?? 1;
+  const maxSeconds = options.maxSeconds ?? MAX_DURATION_SECONDS;
+  const tooLong = () => new PipelineError('too-long', `Files longer than ${maxSeconds / 60} minutes are not supported${options.maxSeconds ? ' with this option' : ' yet'}.`);
   const args = [
     '-hide_banner', '-nostdin',
     '-i', inputPath,
     '-map', '0:a:0', '-vn', '-sn', '-dn',
-    '-ac', '1', '-ar', String(SAMPLE_RATE),
+    '-ac', String(channels), '-ar', String(rate),
     // Hard cap, in case the container reports no duration.
-    '-t', String(MAX_DURATION_SECONDS + 1),
+    '-t', String(maxSeconds + 1),
     '-f', 'f32le', 'pipe:1',
   ];
 
@@ -71,8 +81,8 @@ export function decodeAudio(ffmpegPath: string, inputPath: string, options: Deco
         const match = /Duration: (\d+:\d+:\d+(?:\.\d+)?)/.exec(stderrTail);
         if (match) {
           durationSeconds = parseTimestamp(match[1]);
-          if (durationSeconds > MAX_DURATION_SECONDS) {
-            failure = new PipelineError('too-long', `Files longer than ${MAX_DURATION_SECONDS / 60} minutes are not supported yet.`);
+          if (durationSeconds > maxSeconds) {
+            failure = tooLong();
             ffmpeg.kill();
           }
         }
@@ -105,9 +115,7 @@ export function decodeAudio(ffmpegPath: string, inputPath: string, options: Deco
       const samples = new Float32Array(Math.floor(bytes.byteLength / 4));
       new Uint8Array(samples.buffer).set(bytes.subarray(0, samples.byteLength));
       if (samples.length === 0) return reject(new PipelineError('no-audio', 'This file does not contain any audio.'));
-      if (samples.length / SAMPLE_RATE > MAX_DURATION_SECONDS) {
-        return reject(new PipelineError('too-long', `Files longer than ${MAX_DURATION_SECONDS / 60} minutes are not supported yet.`));
-      }
+      if (samples.length / channels / rate > maxSeconds) return reject(tooLong());
       options.onProgress?.(1);
       resolve(samples);
     });
@@ -170,8 +178,15 @@ export function mergeRetriggeredNotes(notes: NoteEvent[]): NoteEvent[] {
   const lastByPitch = new Map<number, NoteEvent>();
   for (const note of [...notes].sort((a, b) => a.start - b.start)) {
     const previous = lastByPitch.get(note.pitch);
-    const contiguous = previous && Math.abs(note.start - (previous.start + previous.duration)) < 0.05;
-    if (previous && contiguous && note.velocity < previous.velocity * 0.9) {
+    const gap = previous ? note.start - (previous.start + previous.duration) : Infinity;
+    // A same-pitch note without any attack shortly after is the ringing note detected again.
+    const contiguous = Math.abs(gap) < 0.05 || (note.attack !== undefined && note.attack < 0.2 && gap > -0.05 && gap < 0.15);
+    // Weaker in loudness, or without a new attack (when the attack is known).
+    const weaker =
+      previous !== undefined &&
+      (note.velocity < previous.velocity * 0.9 ||
+        (note.attack !== undefined && previous.attack !== undefined && note.attack < 0.3 && note.attack < previous.attack * 0.5));
+    if (previous && contiguous && weaker) {
       previous.duration = Number((note.start + note.duration - previous.start).toFixed(4));
       continue;
     }
@@ -209,12 +224,14 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
   const basicPitch = new BasicPitch(loadModel(options.assets.modelDir) as unknown as ConstructorParameters<typeof BasicPitch>[0]);
   const frames: number[][] = [];
   const onsets: number[][] = [];
-  // Contours (pitch bends) are not used, so they are not kept in memory.
+  // Pitch contours (3 bins per semitone) reveal bends, slides and vibrato; bytes are precise enough.
+  const contours: Uint8Array[] = [];
   await basicPitch.evaluateModel(
     audio,
-    (f, o) => {
+    (f, o, c) => {
       for (const row of f) frames.push(row);
       for (const row of o) onsets.push(row);
+      for (const row of c) contours.push(packContour(row));
     },
     (fraction) => options.onProgress?.(fraction),
   );
@@ -222,13 +239,15 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
   const { onset, frame } = THRESHOLDS[options.sensitivity ?? 'normal'];
   const events = outputToNotesPoly(frames, onsets, onset, frame, MIN_NOTE_FRAMES, true, options.maxHz, options.minHz);
   const round = (value: number, digits: number) => Number(value.toFixed(digits));
+  const context = { onsets, contours, transients: transientEnvelope(audio) };
   const notes = noteFramesToTime(events)
-    .map((note) => ({
+    .map((note, i) => ({
       start: round(note.startTimeSeconds, 4),
       duration: round(note.durationSeconds, 4),
       pitch: note.pitchMidi,
       velocity: round(note.amplitude, 3),
+      ...analyzeArticulation(events[i], note.startTimeSeconds, context),
     }))
     .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
-  return mergeRetriggeredNotes(removeHarmonics(notes));
+  return mergeBends(mergeRetriggeredNotes(removeHarmonics(notes)));
 }
