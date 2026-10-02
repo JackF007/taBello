@@ -10,10 +10,21 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  # Shipped next to the app so users can read them (GPL-3.0 and third-party obligations).
+  - from: LICENSE
+    to: LICENSE.txt
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+  # Sample recordings (public-domain pieces, see shared/samples.ts).
+  - from: resources/samples
+    to: samples
 asarUnpack:
   # Executables and native files must live outside app.asar.
   - "**/node_modules/ffmpeg-static/**"
   - "**/*.node"
+  # ONNX Runtime starts worker threads from its loader, which Node cannot do inside app.asar.
+  - "out/main/transcription-assets/ort/**"
 mac:
   category: public.app-category.music
   identity: "-"
