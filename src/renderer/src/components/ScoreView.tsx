@@ -96,7 +96,7 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
   const updateHighlight = useCallback(() => {
     const api = apiRef.current;
     const location = selectedRef.current;
-    const beat = location && api?.score?.tracks[0]?.staves[0]?.bars[location.bar]?.voices[0]?.beats[location.beat];
+    const beat = location && api?.score?.tracks[0]?.staves[0]?.bars[location.bar]?.voices[location.voice ?? 0]?.beats[location.beat];
     const note = beat?.notes.find((n) => n.string - 1 === location!.string);
     // The tablature is rendered below the notation: its note bounds come last.
     const bounds = note && api?.boundsLookup?.findBeats(beat!)?.flatMap((b) => b.notes ?? []).filter((n) => n.note === note).at(-1);
@@ -116,6 +116,8 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     // Relative paths: assets are bundled in public/assets and served from the app's own origin.
     const api = new AlphaTabApi(containerRef.current, {
       core: { logLevel: LogLevel.Warning, fontDirectory: './assets/font/', includeNoteBounds: true },
+      // Dynamics are not detected, so alphaTab's default marking would be made up.
+      notation: { elements: new Map([[NotationElement.EffectDynamics, false]]) },
       display: {
         layoutMode: LayoutMode.Page,
         scale: 0.9,
@@ -155,7 +157,7 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     api.playerStateChanged.on((e) => setIsPlaying(e.state === synth.PlayerState.Playing));
     api.playbackRangeChanged.on((e) => setHasRange(e.playbackRange !== null));
     api.noteMouseDown.on((note) => {
-      noteClickRef.current?.({ bar: note.beat.voice.bar.index, beat: note.beat.index, string: note.string - 1 });
+      noteClickRef.current?.({ bar: note.beat.voice.bar.index, beat: note.beat.index, string: note.string - 1, voice: note.beat.voice.index });
     });
     api.error.on((e) => {
       console.error('alphaTab error', e);

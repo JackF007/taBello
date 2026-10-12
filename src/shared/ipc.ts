@@ -61,6 +61,8 @@ export interface NoteEvent {
   // How the note was played, from the pitch contours and the audio (absent in older projects).
   /** Onset strength, 0..1: low for notes that were not picked (hammer-ons, pull-offs, slides). */
   attack?: number;
+  /** Basic Pitch's onset strength, 0..1: low for a note it only inferred from sustained energy. */
+  onset?: number;
   /** Bend, in semitones (0.5 steps). */
   bend?: number;
   /** The bend goes back down to the original pitch. */

@@ -1,8 +1,9 @@
 import { Midi } from '@tonejs/midi';
 import type { NoteEvent } from '../../../../shared/ipc';
 import type { Instrument } from '../../../../shared/instruments';
-import type { Arrangement, PlacedNote, TabBeat, Techniques } from './arrange';
-import { alphaTexPitch, chordName, makeKey, type Key } from './theory';
+import { meterTicks, type Arrangement, type PlacedNote, type TabBeat, type Techniques } from './arrange';
+import { alphaTexPitch, chordIntervals, formatChord, harmony, makeKey, type Harmony, type Key } from './theory';
+import { chordVoicing } from './voicing';
 
 export interface ScoreHeader {
   title: string;
@@ -55,26 +56,109 @@ function beatToAlphaTex(beat: TabBeat, stringCount: number, chord: ChordLabel | 
   return (notes.length === 1 ? notes[0] : `(${notes.join(' ')})`) + suffix;
 }
 
+const beatTicks = (beat: TabBeat) => (48 / beat.value) * (beat.dotted ? 1.5 : 1) * (beat.tuplet ? 2 / 3 : 1);
+
 /**
- * Names the chords of an arrangement: each newly struck beat of three notes or more that forms a
- * recognizable chord, written only when the chord changes. Names follow the shapes as written in the
- * tab (relative to the capo), as chord charts do.
+ * Names the chords of an arrangement, bar by bar (or half bar when the harmony changes there), from
+ * every note that sounds — so arpeggios and fingerpicked parts get chord names too, not only strums.
+ * A name is written where its chord starts and only when it changes. Names follow the shapes as
+ * played (relative to the capo), as chord charts do; the diagram shows the strings the chord uses.
  */
-export function chordLabels(arrangement: Arrangement, stringCount: number, capo: number, flats: boolean): (ChordLabel | null)[][] {
+export function chordLabels(
+  arrangement: Arrangement,
+  /** Open strings without capo (the shapes), lowest first, and the number of frets. */
+  tuning: number[],
+  frets: number,
+  capo: number,
+  flats: boolean,
+  withBass = true,
+): (ChordLabel | null)[][] {
+  const ticks = meterTicks(arrangement.meter);
   let previous: string | null = null;
-  return arrangement.bars.map((beats) =>
-    beats.map((beat) => {
-      if (beat.notes.length < 3 || beat.notes.some((n) => n.tied)) return null;
-      const name = chordName(
-        beat.notes.map((n) => n.pitch - capo),
-        flats,
+  // The last full chord on each root: a bare fifth (A5) later in the piece takes its quality (Am),
+  // as a musician reading the harmony in context would.
+  const qualities = new Map<number, string>();
+  const inContext = (chord: Harmony): Harmony => {
+    if (chord.suffix === '5' && qualities.has(chord.root)) {
+      const suffix = qualities.get(chord.root)!;
+      return { ...chord, suffix, intervals: chordIntervals(suffix)! };
+    }
+    if (chord.suffix === '' || chord.suffix === 'm') qualities.set(chord.root, chord.suffix);
+    return chord;
+  };
+  const shapes = new Map<string, (number | null)[]>();
+  return arrangement.bars.map((beats, barIndex) => {
+    const labels: (ChordLabel | null)[] = beats.map(() => null);
+    const starts: number[] = [];
+    beats.reduce((tick, beat) => (starts.push(tick), tick + beatTicks(beat)), 0);
+
+    // The bass voice of the same bar sounds too (fingerstyle).
+    const bassBeats = arrangement.bass?.[barIndex] ?? [];
+    const bassStarts: number[] = [];
+    bassBeats.reduce((tick, beat) => (bassStarts.push(tick), tick + beatTicks(beat)), 0);
+
+    const analyse = (from: number, to: number) => {
+      const inside = beats.map((beat, i) => ({ beat, i, start: starts[i] })).filter(({ start }) => start >= from && start < to);
+      if (inside.length === 0) return null;
+      const all = [...inside, ...bassBeats.map((beat, i) => ({ beat, i: -1, start: bassStarts[i] })).filter(({ start }) => start >= from && start < to)];
+      const sounding = all.flatMap(({ beat }) => beat.notes.map((note) => ({ note, weight: beatTicks(beat) })));
+      // Harmony needs more than one line: notes together, or an arpeggio spanning an octave.
+      // Notes sounding together, counting the bass voice.
+      const together = Math.max(
+        0,
+        ...inside.map(({ beat, start }) => beat.notes.length + (bassBeats.some((b, k) => b.notes.length > 0 && bassStarts[k] <= start && start < bassStarts[k] + beatTicks(b)) ? 1 : 0)),
       );
-      if (!name || name === previous) return null;
-      previous = name;
-      const frets = Array.from({ length: stringCount }, (_, i) => beat.notes.find((n) => n.string === stringCount - 1 - i)?.fret ?? null);
-      return { name, frets };
-    }),
-  );
+      const pitches = sounding.map(({ note }) => note.pitch);
+      if (sounding.length === 0 || (together < 2 && (pitches.length < 4 || Math.max(...pitches) - Math.min(...pitches) < 12))) return null;
+      const weights = new Array<number>(12).fill(0);
+      const chordal = new Array<number>(12).fill(0);
+      for (const { beat } of all) {
+        for (const note of beat.notes) {
+          const pc = (((note.pitch - capo) % 12) + 12) % 12;
+          weights[pc] += beatTicks(beat);
+          if (beat.notes.length >= 3) chordal[pc] += beatTicks(beat);
+        }
+      }
+      const bass = (((Math.min(...pitches) - capo) % 12) + 12) % 12;
+      const found = harmony(weights, bass, withBass, chordal);
+      if (!found) return null;
+      const chord = inContext(found);
+      const name = formatChord(chord, flats);
+      const tones = chord.intervals.map((i) => (chord.root + i) % 12);
+      // The diagram: the shape actually played when the chord is strummed (three strings or more,
+      // all chord tones, within the hand's reach); otherwise the standard shape for this tuning.
+      const strum = inside
+        .map(({ beat }) => beat.notes)
+        .find((notes) => {
+          const fretted = notes.filter((n) => n.fret > 0).map((n) => n.fret);
+          return notes.length >= 3 && notes.every((n) => tones.includes((((n.pitch - capo) % 12) + 12) % 12)) && (fretted.length === 0 || Math.max(...fretted) - Math.min(...fretted) <= 4);
+        });
+      let shape = strum ? tuning.map((_, string) => strum.find((n) => n.string === string)?.fret ?? null) : shapes.get(name);
+      if (!shape) {
+        shape = chordVoicing({ root: chord.root, intervals: chord.intervals, bass: withBass ? (chord.bass ?? chord.root) : -1, tuning, frets }) ?? tuning.map(() => null);
+        shapes.set(name, shape);
+      }
+      // alphaTex lists frets from the 1st (highest) string down.
+      const diagram = [...shape].reverse();
+      return { name, frets: diagram, at: inside[0].i };
+    };
+
+    const whole = analyse(0, ticks.bar);
+    let segments = whole ? [whole] : [];
+    // Two chords in one bar (4/4): when both halves are clear and different.
+    if (arrangement.meter.beatsPerBar >= 4) {
+      const half = (arrangement.meter.beatsPerBar / 2) * ticks.beat;
+      const first = analyse(0, half);
+      const second = analyse(half, ticks.bar);
+      if (first && second && first.name !== second.name) segments = [first, second];
+    }
+    for (const segment of segments) {
+      if (segment.name === previous) continue;
+      previous = segment.name;
+      labels[segment.at] = { name: segment.name, frets: segment.frets };
+    }
+    return labels;
+  });
 }
 
 export interface TempoMark {
@@ -93,13 +177,15 @@ export interface TempoMark {
 export function tempoMarks(arrangement: Arrangement): TempoMark[] {
   const { barTimes, meter } = arrangement;
   const quartersPerBar = meter.beatsPerBar * meter.quartersPerBeat;
+  // A pickup bar is shorter.
+  const quartersIn = (bar: number) => (bar === 0 ? quartersPerBar * (1 - arrangement.pickup / meterTicks(meter).bar) : quartersPerBar);
   const marks: TempoMark[] = [];
   let shown = 0;
   let current = 0;
   let elapsed = 0;
   for (let bar = 0; bar < barTimes.length - 1; bar++) {
     const target = barTimes[bar + 1] - barTimes[0];
-    const exact = (quartersPerBar * 60) / Math.max(1e-3, target - elapsed);
+    const exact = (quartersIn(bar) * 60) / Math.max(1e-3, target - elapsed);
     let bpm = Math.min(999, Math.max(10, exact));
     let visible = false;
     if (bar === 0 || Math.abs(Math.round(bpm) - shown) / shown >= 0.04) {
@@ -113,7 +199,7 @@ export function tempoMarks(arrangement: Arrangement): TempoMark[] {
       marks.push({ bar, bpm, visible });
       current = bpm;
     }
-    elapsed += (quartersPerBar * 60) / current;
+    elapsed += (quartersIn(bar) * 60) / current;
   }
   return marks;
 }
@@ -126,7 +212,7 @@ export function toAlphaTex(arrangement: Arrangement, header: ScoreHeader): strin
   const labels =
     header.chords === false
       ? arrangement.bars.map((beats) => beats.map(() => null))
-      : chordLabels(arrangement, stringCount, capo, makeFlats(key, capo));
+      : chordLabels(arrangement, header.tuning, instrument.frets, capo, makeFlats(key, capo), instrument.id !== 'ukulele');
   // One diagram per chord name: the first voicing used.
   const diagrams = new Map<string, ChordLabel>();
   for (const label of labels.flat()) if (label && !diagrams.has(label.name)) diagrams.set(label.name, label);
@@ -144,16 +230,25 @@ export function toAlphaTex(arrangement: Arrangement, header: ScoreHeader): strin
     `\\tuning ${[...header.tuning].reverse().map(alphaTexPitch).join(' ')}`,
     ...(capo ? [`\\capo ${capo}`] : []),
     ...(instrument.id === 'bass' ? ['\\clef F4'] : []),
+    // Guitar and bass are written an octave above how they sound (alphaTab's default for them);
+    // ukulele music is written at pitch.
+    ...(instrument.id === 'ukulele' ? ['\\displaytranspose 0'] : []),
     `\\ts ${meter.numerator} ${meter.denominator}`,
     `\\ks ${key.alphaTex}`,
     ...[...diagrams.values()].map((d) => `\\chord (${quote(d.name)} ${d.frets.map((f) => f ?? 'x').join(' ')})`),
+    // With a bass voice, each voice is written in full after a \\voice marker.
+    ...(arrangement.bass ? ['\\voice'] : []),
     arrangement.bars
       .map((beats, bar) => {
         const mark = tempoAt.get(bar);
         const tempo = mark ? `\\tempo (${mark.bpm}${mark.visible ? '' : ' hide'}) ` : '';
-        return tempo + beats.map((b, i) => beatToAlphaTex(b, stringCount, labels[bar][i])).join(' ');
+        const anacrusis = bar === 0 && arrangement.pickup > 0 ? '\\ac ' : '';
+        return anacrusis + tempo + beats.map((b, i) => beatToAlphaTex(b, stringCount, labels[bar][i])).join(' ');
       })
       .join(' |\n'),
+    ...(arrangement.bass
+      ? ['\\voice', arrangement.bass.map((beats) => beats.map((b) => beatToAlphaTex(b, stringCount, null)).join(' ')).join(' |\n')]
+      : []),
   ];
   return lines.join('\n');
 }
