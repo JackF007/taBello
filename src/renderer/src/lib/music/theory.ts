@@ -314,10 +314,12 @@ const FLAT_ROOTS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 
  * Names the chord formed by some pitches (e.g. "Am", "G7", "C/G"), or null when they do not form a
  * recognizable chord. Every note must belong to the chord; the fifth may be missing.
  */
-export function chordName(pitches: number[], flats = false): string | null {
+export function chordName(pitches: number[], flats = false, withBass = true): string | null {
   const classes = new Set(pitches.map((p) => ((p % 12) + 12) % 12));
   if (classes.size < 2) return null;
-  const bass = ((Math.min(...pitches) % 12) + 12) % 12;
+  // Without a bass (re-entrant ukulele tuning: the lowest pitch is not on the lowest string), chords
+  // are named by their root only.
+  const bass = withBass ? ((Math.min(...pitches) % 12) + 12) % 12 : -1;
   const roots = flats ? FLAT_ROOTS : SHARP_ROOTS;
 
   let best: { name: string; score: number } | null = null;
@@ -332,7 +334,7 @@ export function chordName(pitches: number[], flats = false): string | null {
       const score = (missing.length === 0 ? 100 : 0) + (root === bass ? 50 : 0) - order;
       if (!best || score > best.score) {
         const name = roots[root] + suffix;
-        best = { name: root === bass ? name : `${name}/${roots[bass]}`, score };
+        best = { name: root === bass || bass < 0 ? name : `${name}/${roots[bass]}`, score };
       }
     });
   }

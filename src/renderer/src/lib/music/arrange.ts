@@ -500,13 +500,17 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
   );
   if (techniques) assignTechniques(notes, playable, chosen, legatoAttack);
 
-  // Each chord lasts until it ends or the next one starts; gaps become rests.
+  // Each chord lasts until it ends or the next one starts. Detected note ends are imprecise and
+  // plucked strings ring on, so a gap shorter than a beat is not a rest: the chord is held across it.
   const beatsByBar = new Map<number, TabBeat[]>();
   let cursor = 0;
   playable.forEach(({ chord }, i) => {
     const start = chord.slot * ticks.slot;
     if (start > cursor) splitIntoBeats(cursor, start - cursor, [], meter, beatsByBar);
-    const end = Math.min(chord.endSlot, playable[i + 1]?.chord.slot ?? Infinity) * ticks.slot;
+    // The last chord rings to the end of its bar when that is less than a beat away.
+    const next = playable[i + 1]?.chord.slot ?? Math.ceil((chord.endSlot + 1e-9) / (ticks.bar / ticks.slot)) * (ticks.bar / ticks.slot);
+    const endSlot = next - chord.endSlot < meter.slotsPerBeat ? next : chord.endSlot;
+    const end = Math.min(endSlot, next) * ticks.slot;
     splitIntoBeats(start, end - start, chosen[i].notes, meter, beatsByBar);
     cursor = end;
   });
