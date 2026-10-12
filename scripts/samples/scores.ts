@@ -4,9 +4,15 @@ import type { SynthNote } from '../../src/main/transcription/testing/strings';
 
 export type DrumHit = { time: number; kind: 'kick' | 'snare' | 'hat' };
 
+/** A note with its place in the score: start and length in beats. */
+export interface ScoredNote extends SynthNote {
+  beat?: number;
+  beats?: number;
+}
+
 export interface Part {
   kind: 'strings' | 'lead';
-  notes: SynthNote[];
+  notes: ScoredNote[];
   /** -1 (left) … 1 (right). */
   pan: number;
   gain: number;
@@ -15,6 +21,9 @@ export interface Part {
 export interface Piece {
   file: string;
   seconds: number;
+  /** Beats per bar and the length of the pickup before bar 1, in beats (for comparing scores). */
+  beatsPerBar: number;
+  pickup: number;
   parts: Part[];
   drums?: DrumHit[];
 }
@@ -32,15 +41,17 @@ function clock(from: number, to = from, totalBeats = 1) {
 }
 
 /** Lays out a sequence of [pitch, beats] events from a starting beat; chords are arrays. */
-function sequence(events: Event[], time: (beat: number) => number, options: { start?: number; legato?: number; amplitude?: number; strum?: number } = {}): SynthNote[] {
-  const notes: SynthNote[] = [];
+function sequence(events: Event[], time: (beat: number) => number, options: { start?: number; legato?: number; amplitude?: number; strum?: number } = {}): ScoredNote[] {
+  const notes: ScoredNote[] = [];
   let beat = options.start ?? 0;
   for (const [pitch, beats] of events) {
     if (pitch !== null) {
       const start = time(beat);
       const duration = (time(beat + beats) - start) * (options.legato ?? 0.95);
       const pitches = Array.isArray(pitch) ? pitch : [pitch];
-      pitches.forEach((p, k) => notes.push({ start: start + k * (options.strum ?? 0), duration, pitch: p, amplitude: options.amplitude ?? 0.5 }));
+      pitches.forEach((p, k) =>
+        notes.push({ start: start + k * (options.strum ?? 0), duration, pitch: p, amplitude: options.amplitude ?? 0.5, beat, beats }),
+      );
     }
     beat += beats;
   }
@@ -62,6 +73,8 @@ function greensleeves(): Piece {
   return {
     file: 'greensleeves.ogg',
     seconds: time(1 + 15 * 3) + 1.5,
+    beatsPerBar: 3,
+    pickup: 1,
     parts: [
       { kind: 'strings', notes: sequence(melody, time, { amplitude: 0.55 }), pan: 0.1, gain: 1 },
       { kind: 'strings', notes: sequence(bass, time, { start: 1, amplitude: 0.4 }), pan: -0.1, gain: 0.8 },
@@ -73,7 +86,7 @@ function greensleeves(): Piece {
 function romance(): Piece {
   const time = clock(66);
   const melody = [71, 71, 71, 71, 69, 67, 67, 66, 64, 64, 67, 71, 76, 76, 76, 76, 74, 72, 72, 71, 69, 69, 71, 72, 71, 71, 71];
-  const notes: SynthNote[] = [];
+  const notes: ScoredNote[] = [];
   melody.forEach((pitch, beat) => {
     const bar = Math.floor(beat / 3);
     // E minor on open strings, then A minor (bars 7–8).
@@ -81,11 +94,11 @@ function romance(): Piece {
     const bass = bar === 6 || bar === 7 ? 45 : 40;
     [pitch, ...inner].forEach((p, k) => {
       const start = time(beat + k / 3);
-      notes.push({ start, duration: time(beat + 1) - start, pitch: p, amplitude: k === 0 ? 0.55 : 0.3 });
+      notes.push({ start, duration: time(beat + 1) - start, pitch: p, amplitude: k === 0 ? 0.55 : 0.3, beat: beat + k / 3, beats: 1 - k / 3 });
     });
-    if (beat % 3 === 0) notes.push({ start: time(beat), duration: time(beat + 3) - time(beat), pitch: bass, amplitude: 0.45 });
+    if (beat % 3 === 0) notes.push({ start: time(beat), duration: time(beat + 3) - time(beat), pitch: bass, amplitude: 0.45, beat, beats: 3 });
   });
-  return { file: 'romance.ogg', seconds: time(melody.length) + 1.5, parts: [{ kind: 'strings', notes, pan: 0, gain: 1 }] };
+  return { file: 'romance.ogg', seconds: time(melody.length) + 1.5, beatsPerBar: 3, pickup: 0, parts: [{ kind: 'strings', notes, pan: 0, gain: 1 }] };
 }
 
 // --- Minuet in G (Petzold), speeding up from 96 to 126 BPM --------------------------------------------
@@ -105,6 +118,8 @@ function minuet(): Piece {
   return {
     file: 'minuet-in-g.ogg',
     seconds: time(beats) + 1.5,
+    beatsPerBar: 3,
+    pickup: 0,
     parts: [
       { kind: 'strings', notes: sequence(melody, time, { amplitude: 0.55 }), pan: 0.1, gain: 1 },
       { kind: 'strings', notes: sequence(bassBars.map((p) => [p, 3] as Event), time, { amplitude: 0.4 }), pan: -0.1, gain: 0.8 },
@@ -132,7 +147,7 @@ function bluesLick(): Piece {
     { start: at(offset + 6), duration: span(offset + 6, offset + 8) * 0.97, pitch: 72, changes: [{ at: 0.1, pitch: 74, glide: 0.15 }, { at: span(offset + 6, offset + 7), pitch: 72, glide: 0.15 }] },
   ];
   const notes = [...lick(0), ...lick(8), { start: at(16), duration: span(16, 20), pitch: 57, amplitude: 0.5, vibrato: 0.25 }];
-  return { file: 'blues-lick.ogg', seconds: time(20) + 1, parts: [{ kind: 'strings', notes, pan: 0, gain: 1 }] };
+  return { file: 'blues-lick.ogg', seconds: time(20) + 1, beatsPerBar: 4, pickup: 0, parts: [{ kind: 'strings', notes, pan: 0, gain: 1 }] };
 }
 
 // --- Ode to Joy (Beethoven) on ukulele: melody with strummed chords --------------------------------------
@@ -146,6 +161,8 @@ function odeToJoy(): Piece {
   return {
     file: 'ode-to-joy.ogg',
     seconds: time(32) + 1.5,
+    beatsPerBar: 4,
+    pickup: 0,
     parts: [
       { kind: 'strings', notes: sequence(melody, time, { amplitude: 0.6 }), pan: 0.15, gain: 1 },
       { kind: 'strings', notes: sequence(chords, time, { amplitude: 0.18, strum: 0.015, legato: 0.5 }), pan: -0.15, gain: 0.7 },
@@ -193,6 +210,8 @@ function saints(): Piece {
   return {
     file: 'saints-band.ogg',
     seconds: time(beats) + 1.5,
+    beatsPerBar: 4,
+    pickup: 0,
     parts: [
       { kind: 'lead', notes: sequence(melody, time, { amplitude: 0.5, legato: 0.9 }), pan: 0.25, gain: 0.55 },
       { kind: 'strings', notes: saintsBass(), pan: 0, gain: 0.9 },

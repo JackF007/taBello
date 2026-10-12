@@ -60,7 +60,7 @@ function beatToAlphaTex(beat: TabBeat, stringCount: number, chord: ChordLabel | 
  * recognizable chord, written only when the chord changes. Names follow the shapes as written in the
  * tab (relative to the capo), as chord charts do.
  */
-export function chordLabels(arrangement: Arrangement, stringCount: number, capo: number, flats: boolean): (ChordLabel | null)[][] {
+export function chordLabels(arrangement: Arrangement, stringCount: number, capo: number, flats: boolean, withBass = true): (ChordLabel | null)[][] {
   let previous: string | null = null;
   return arrangement.bars.map((beats) =>
     beats.map((beat) => {
@@ -68,6 +68,7 @@ export function chordLabels(arrangement: Arrangement, stringCount: number, capo:
       const name = chordName(
         beat.notes.map((n) => n.pitch - capo),
         flats,
+        withBass,
       );
       if (!name || name === previous) return null;
       previous = name;
@@ -126,7 +127,7 @@ export function toAlphaTex(arrangement: Arrangement, header: ScoreHeader): strin
   const labels =
     header.chords === false
       ? arrangement.bars.map((beats) => beats.map(() => null))
-      : chordLabels(arrangement, stringCount, capo, makeFlats(key, capo));
+      : chordLabels(arrangement, stringCount, capo, makeFlats(key, capo), instrument.id !== 'ukulele');
   // One diagram per chord name: the first voicing used.
   const diagrams = new Map<string, ChordLabel>();
   for (const label of labels.flat()) if (label && !diagrams.has(label.name)) diagrams.set(label.name, label);
@@ -144,6 +145,9 @@ export function toAlphaTex(arrangement: Arrangement, header: ScoreHeader): strin
     `\\tuning ${[...header.tuning].reverse().map(alphaTexPitch).join(' ')}`,
     ...(capo ? [`\\capo ${capo}`] : []),
     ...(instrument.id === 'bass' ? ['\\clef F4'] : []),
+    // Guitar and bass are written an octave above how they sound (alphaTab's default for them);
+    // ukulele music is written at pitch.
+    ...(instrument.id === 'ukulele' ? ['\\displaytranspose 0'] : []),
     `\\ts ${meter.numerator} ${meter.denominator}`,
     `\\ks ${key.alphaTex}`,
     ...[...diagrams.values()].map((d) => `\\chord (${quote(d.name)} ${d.frets.map((f) => f ?? 'x').join(' ')})`),
