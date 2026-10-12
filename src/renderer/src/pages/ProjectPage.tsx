@@ -445,7 +445,7 @@ const ProjectEditor = ({ project }: { project: Project }) => {
                   <span className="text-muted-foreground">bar {selected.bar + 1}</span>
                   <Label htmlFor="note-fret" className="text-muted-foreground">Fret</Label>
                   <Input
-                    key={`${selected.bar}-${selected.beat}-${selected.string}-${selectedNote.fret}`}
+                    key={`${selected.voice ?? 0}-${selected.bar}-${selected.beat}-${selected.string}-${selectedNote.fret}`}
                     id="note-fret"
                     className="h-9 w-16"
                     type="number"

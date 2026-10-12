@@ -8,6 +8,8 @@ export interface NoteLocation {
   bar: number;
   beat: number;
   string: number;
+  /** 1 for the bass voice of a fingerstyle arrangement; 0 (or absent) otherwise. */
+  voice?: number;
 }
 
 export type NoteEdit =
@@ -24,7 +26,8 @@ export interface EditContext {
 }
 
 export function findNote(arrangement: Arrangement, location: NoteLocation): PlacedNote | null {
-  return arrangement.bars[location.bar]?.[location.beat]?.notes.find((n) => n.string === location.string) ?? null;
+  const bars = location.voice === 1 && arrangement.bass ? arrangement.bass : arrangement.bars;
+  return bars[location.bar]?.[location.beat]?.notes.find((n) => n.string === location.string) ?? null;
 }
 
 /**
