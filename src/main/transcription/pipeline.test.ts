@@ -87,6 +87,13 @@ describe('mergeRetriggeredNotes', () => {
     expect(mergeRetriggeredNotes([note(0.5, 0.3, 57, 0.86), note(0.8, 0.2, 57, 0.74)])).toEqual([note(0.5, 0.5, 57, 0.86)]);
   });
 
+  it('merges an echo of a ringing note that the onset detector did not see', () => {
+    const echo = { ...note(0.45, 0.3, 45, 0.5), onset: 0.15 };
+    expect(mergeRetriggeredNotes([{ ...note(0, 0.3, 45, 0.8), onset: 0.95 }, echo])).toEqual([{ ...note(0, 0.75, 45, 0.8), onset: 0.95 }]);
+    // Picked again, however softly: a new note.
+    expect(mergeRetriggeredNotes([{ ...note(0, 0.3, 45, 0.8), onset: 0.95 }, { ...echo, onset: 0.9 }])).toHaveLength(2);
+  });
+
   it('keeps real repeated notes: as loud, or separated by a gap', () => {
     expect(mergeRetriggeredNotes([note(0, 0.3, 60, 0.9), note(0.3, 0.3, 60, 0.84)])).toHaveLength(2);
     expect(mergeRetriggeredNotes([note(0, 0.3, 60, 0.9), note(0.45, 0.3, 60, 0.5)])).toHaveLength(2);

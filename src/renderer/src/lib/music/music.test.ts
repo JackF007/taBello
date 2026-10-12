@@ -192,6 +192,8 @@ describe('export', () => {
             expect(staff.bars).toHaveLength(arrangement.bars.length);
             expect(staff.stringTuning.tunings).toEqual([...tuning.strings].reverse());
             expect(staff.capo).toBe(capo);
+            // Standard notation: guitar and bass an octave above how they sound, ukulele at pitch.
+            expect(staff.displayTranspositionPitch + 0).toBe(instrument.id === 'ukulele' ? 0 : -12);
             // alphaTab agrees that every bar is complete, triplets included.
             for (const bar of staff.bars) {
               const length = bar.voices[0].beats.reduce((sum, b) => sum + b.playbackDuration, 0);
@@ -369,6 +371,12 @@ describe('chords', () => {
     expect(chordName([48, 52, 58])).toBe('C7');
     expect(chordName([46, 53, 58, 62, 65], true)).toBe('Bb');
     expect(chordName([46, 53, 58, 62, 65])).toBe('A#');
+  });
+
+  it('names ukulele chords by their root (re-entrant tuning has no bass)', () => {
+    // G7 on ukulele: G4 D4 F4 B4; the lowest pitch, D4, is not on the lowest string.
+    expect(chordName([67, 62, 65, 71])).toBe('G7/D');
+    expect(chordName([67, 62, 65, 71], false, false)).toBe('G7');
   });
 
   it('does not name clusters or single notes', () => {
