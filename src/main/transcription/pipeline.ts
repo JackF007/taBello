@@ -9,7 +9,7 @@ import { loadGraphModel } from '@tensorflow/tfjs-converter';
 import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
 import type { ErrorCode, NoteEvent, Sensitivity } from '../../shared/ipc';
 import { MAX_DURATION_SECONDS } from '../../shared/ipc';
-import { analyzeArticulation, mergeBends, packContour, transientEnvelope } from './articulation';
+import { analyzeArticulation, mergeBends, packContour, pitchDeviation, transientEnvelope } from './articulation';
 
 /** Basic Pitch expects mono audio at this rate. */
 export const SAMPLE_RATE = 22050;
@@ -23,6 +23,11 @@ const THRESHOLDS: Record<Sensitivity, { onset: number; frame: number }> = {
 };
 // 11 frames ≈ 128 ms minimum note length.
 const MIN_NOTE_FRAMES = 11;
+// Fast passages: 16th notes above ~115 BPM are shorter than MIN_NOTE_FRAMES. A second pass with
+// 6 frames (≈ 70 ms) recovers short notes, but only clearly attacked ones: the short fragments a bend
+// or slide leaves between two pitches have no onset of their own.
+const FAST_NOTE_FRAMES = 6;
+const FAST_NOTE_ONSET = 0.5;
 
 export class PipelineError extends Error {
   constructor(
@@ -186,7 +191,12 @@ export function mergeRetriggeredNotes(notes: NoteEvent[]): NoteEvent[] {
       previous !== undefined &&
       (note.velocity < previous.velocity * 0.9 ||
         (note.attack !== undefined && previous.attack !== undefined && note.attack < 0.3 && note.attack < previous.attack * 0.5));
-    if (previous && contiguous && weaker) {
+    // Basic Pitch also ends a decaying note early and detects it again a little later, when another
+    // string is picked (a bass note under a melody). Its onset detector does not fire for such an
+    // echo (it is inferred from the sustained energy), whereas it fires for a string picked again,
+    // however softly.
+    const echo = previous !== undefined && note.onset !== undefined && note.onset < 0.4 && gap > -0.05 && gap < 0.6;
+    if (previous && ((contiguous && weaker) || echo)) {
       previous.duration = Number((note.start + note.duration - previous.start).toFixed(4));
       continue;
     }
@@ -195,6 +205,26 @@ export function mergeRetriggeredNotes(notes: NoteEvent[]): NoteEvent[] {
     lastByPitch.set(note.pitch, copy);
   }
   return merged;
+}
+
+/**
+ * Basic Pitch can notice a note of a strummed chord a few hundred milliseconds late, once the louder
+ * strings have decayed; it then infers the note without an onset. Such a note, starting shortly after
+ * a chord that was clearly attacked (and before anything else is), belongs to that chord.
+ */
+export function alignInferredOnsets(notes: NoteEvent[]): NoteEvent[] {
+  const strong = notes.filter((n) => (n.onset ?? 1) >= 0.6).sort((a, b) => a.start - b.start);
+  return notes.map((note) => {
+    if (note.onset === undefined || note.onset >= 0.4) return note;
+    // The latest clearly attacked note before this one, and the chord it belongs to.
+    const before = strong.filter((s) => s.start <= note.start - 0.03 && s.start >= note.start - 0.3);
+    const last = before.at(-1);
+    if (!last) return note;
+    const chord = before.filter((s) => last.start - s.start <= 0.06);
+    if (chord.length < 2 || chord.some((s) => s.pitch === note.pitch)) return note;
+    const start = Math.min(...chord.map((s) => s.start));
+    return { ...note, start, duration: Number((note.duration + note.start - start).toFixed(4)) };
+  });
 }
 
 // Intervals (in semitones) at which a string's overtones are often mistaken for extra notes.
@@ -238,6 +268,24 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
 
   const { onset, frame } = THRESHOLDS[options.sensitivity ?? 'normal'];
   const events = outputToNotesPoly(frames, onsets, onset, frame, MIN_NOTE_FRAMES, true, options.maxHz, options.minHz);
+  const onsetStrength = (event: (typeof events)[number]) => {
+    let strongest = 0;
+    for (let f = Math.max(0, event.startFrame - 2); f <= event.startFrame + 2; f++) strongest = Math.max(strongest, onsets[f]?.[event.pitchMidi - 21] ?? 0);
+    return strongest;
+  };
+  const overlaps = (a: (typeof events)[number], b: (typeof events)[number]) =>
+    a.pitchMidi === b.pitchMidi && a.startFrame < b.startFrame + b.durationFrames && b.startFrame < a.startFrame + a.durationFrames;
+  // A real short note holds its pitch; a fragment of a bend or slide glides through it.
+  const steady = (event: (typeof events)[number]) => {
+    const deviations = pitchDeviation(contours, event).filter((d): d is number => d !== null);
+    // Too little contour to tell: no evidence of a glide.
+    if (deviations.length < 3) return true;
+    return Math.max(...deviations) - Math.min(...deviations) <= 0.5 && Math.abs(deviations[deviations.length >> 1]) <= 0.34;
+  };
+  for (const fast of outputToNotesPoly(frames, onsets, onset, frame, FAST_NOTE_FRAMES, true, options.maxHz, options.minHz)) {
+    if (onsetStrength(fast) < FAST_NOTE_ONSET || !steady(fast)) continue;
+    if (!events.some((e) => overlaps(e, fast))) events.push(fast);
+  }
   const round = (value: number, digits: number) => Number(value.toFixed(digits));
   const context = { onsets, contours, transients: transientEnvelope(audio) };
   const notes = noteFramesToTime(events)
@@ -249,5 +297,5 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
       ...analyzeArticulation(events[i], note.startTimeSeconds, context),
     }))
     .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
-  return mergeBends(mergeRetriggeredNotes(removeHarmonics(notes)));
+  return mergeBends(alignInferredOnsets(mergeRetriggeredNotes(removeHarmonics(notes)))).sort((a, b) => a.start - b.start || a.pitch - b.pitch);
 }
