@@ -22,7 +22,7 @@ export interface FrameNote {
   pitchMidi: number;
 }
 
-export type Articulation = Pick<NoteEvent, 'attack' | 'bend' | 'release' | 'slideIn' | 'slideOut' | 'vibrato'>;
+export type Articulation = Pick<NoteEvent, 'attack' | 'onset' | 'bend' | 'release' | 'slideIn' | 'slideOut' | 'vibrato'>;
 
 export interface ArticulationContext {
   /** Basic Pitch onset activations, per frame and key. */
@@ -143,12 +143,17 @@ const median = (values: number[]) => {
 const round = (value: number, step: number) => Math.round(value / step) * step;
 
 export function analyzeArticulation(note: FrameNote, startSeconds: number, context: ArticulationContext): Articulation {
-  const { contours, transients } = context;
+  const { onsets, contours, transients } = context;
   // Attack: the pick click in the audio. (Basic Pitch's onset activation is no help here: it fires on
   // any sudden pitch change, hammer-ons included, and stays low for a picked note that an overtone of
   // another string was already sounding.)
   const attack = pluckStrength(transients, startSeconds);
-  const result: Articulation = { attack: Number(attack.toFixed(3)) };
+  // Basic Pitch's onset activation for this key: strong when the string starts sounding anew,
+  // weak when Basic Pitch only inferred the note from its sustained energy.
+  const key = note.pitchMidi - 21;
+  let onset = 0;
+  for (let f = Math.max(0, note.startFrame - 2); f <= note.startFrame + 2; f++) onset = Math.max(onset, onsets[f]?.[key] ?? 0);
+  const result: Articulation = { attack: Number(attack.toFixed(3)), onset: Number(onset.toFixed(3)) };
 
   // Smoothed pitch deviation (median of 3) over the frames with a clear pitch.
   const raw = pitchDeviation(contours, note);

@@ -105,8 +105,9 @@ test('transcribes a video into a playable, exportable score', async () => {
   // Edit a note: click the first tab number, raise it a semitone, delete it, undo.
   await page.getByRole('button', { name: 'Edit notes' }).click();
   await page.locator('.at-surface').scrollIntoViewIfNeeded();
-  // Tab numbers are the only texts made of digits alone (bar numbers are padded).
-  await page.locator('.at-surface svg text', { hasText: /^\d+$/ }).first().click();
+  // Tab numbers: digits colored by string (bar numbers are padded, chord diagrams are not colored).
+  const stringColors = ['#2EE05A', '#FF3355', '#FFD600', '#2E9BFF', '#FF8A1F', '#B45CFF'].map((c) => `[fill="${c}"]`).join(',');
+  await page.locator(`.at-surface svg text:is(${stringColors})`, { hasText: /^\d+$/ }).first().click();
   const info = page.getByTestId('selected-note-info');
   await expect(info).toHaveText(/^[A-G]♯?\d$/);
   const name = await info.textContent();
