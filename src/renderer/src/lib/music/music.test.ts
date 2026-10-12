@@ -8,7 +8,7 @@ import { arrange, detectCapo, detectTuning, meterTicks, type ArrangeOptions, typ
 import { applyEdit, findNote } from './edit';
 import { tempoMarks, toAlphaTex, toMidi } from './export';
 import { detectTempoChanges } from './tempo';
-import { alphaTexPitch, chordName, detectKey, detectMeter, estimateTempo, makeKey } from './theory';
+import { alphaTexPitch, chordName, detectKey, detectMeter, estimateTempo, harmonyName, makeKey } from './theory';
 
 const guitar = INSTRUMENTS.guitar;
 const standard = guitar.tunings[0].strings;
@@ -179,8 +179,10 @@ describe('export', () => {
             const arrangement = arrange(notes, {
               tuning: tuning.strings, frets: instrument.frets, bpm, offset: rand(), capo, meter, barPhase,
             });
-            for (const bar of arrangement.bars) {
-              expect(bar.reduce((sum, b) => sum + ticks(b), 0)).toBe(meterTicks(METERS[meter]).bar);
+            for (const voice of [arrangement.bars, ...(arrangement.bass ? [arrangement.bass] : [])]) {
+              voice.forEach((bar, i) => {
+                expect(bar.reduce((sum, b) => sum + ticks(b), 0)).toBe(meterTicks(METERS[meter]).bar - (i === 0 ? arrangement.pickup : 0));
+              });
             }
 
             const tex = toAlphaTex(arrangement, {
@@ -196,8 +198,10 @@ describe('export', () => {
             expect(staff.displayTranspositionPitch + 0).toBe(instrument.id === 'ukulele' ? 0 : -12);
             // alphaTab agrees that every bar is complete, triplets included.
             for (const bar of staff.bars) {
-              const length = bar.voices[0].beats.reduce((sum, b) => sum + b.playbackDuration, 0);
-              expect(length).toBe(bar.masterBar.calculateDuration());
+              for (const voice of bar.voices) {
+                const length = voice.beats.reduce((sum, b) => sum + b.playbackDuration, 0);
+                expect(length).toBe(bar.masterBar.calculateDuration());
+              }
             }
           }
         }
@@ -275,11 +279,15 @@ describe('meters', () => {
   it('starts bars on the chosen downbeat, with the pickup in a bar of its own', () => {
     // One pickup beat, then a full bar.
     const notes = [0, 0.5, 1, 1.5, 2].map((t, i) => note(t, 52 + i, 0.45));
-    const { bars, startTime } = arrange(notes, { ...options, barPhase: 1 });
+    const { bars, startTime, pickup } = arrange(notes, { ...options, barPhase: 1 });
     expect(bars).toHaveLength(2);
-    expect(bars[0].at(-1)?.notes[0].pitch).toBe(52);
+    // Bar 1 is an anacrusis holding just the pickup note; the score starts with it.
+    expect(pickup).toBe(36);
+    expect(bars[0].map((b) => b.notes[0]?.pitch)).toEqual([52]);
     expect(bars[1][0].notes[0].pitch).toBe(53);
-    expect(startTime).toBeCloseTo(-1.5);
+    expect(startTime).toBeCloseTo(0);
+    const tex = toAlphaTex(arrange(notes, { ...options, barPhase: 1 }), { title: 't', bpm: 120, key: makeKey(4, 'minor'), instrument: guitar, tuning: standard });
+    expect(parseAlphaTex(tex).masterBars[0].isAnacrusis).toBe(true);
   });
 
   it('maps score time back to the recording', () => {
@@ -371,6 +379,35 @@ describe('chords', () => {
     expect(chordName([48, 52, 58])).toBe('C7');
     expect(chordName([46, 53, 58, 62, 65], true)).toBe('Bb');
     expect(chordName([46, 53, 58, 62, 65])).toBe('A#');
+  });
+
+  it('names the harmony of a passage, ignoring passing notes', () => {
+    const weights = (entries: [number, number][]) => {
+      const w = new Array<number>(12).fill(0);
+      for (const [pc, amount] of entries) w[pc] += amount;
+      return w;
+    };
+    // An E minor arpeggio with a passing F#: Em, not Em(add9) or a sus chord.
+    expect(harmonyName(weights([[4, 6], [7, 4], [11, 4], [6, 1]]), 4)).toBe('Em');
+    // C with a D in the melody only: C. With the D sounding in the chords: Cadd9.
+    const c = weights([[0, 6], [4, 4], [7, 4], [2, 2]]);
+    expect(harmonyName(c, 0, false, true, weights([[0, 6], [4, 4], [7, 4]]))).toBe('C');
+    expect(harmonyName(c, 0, false, true, c)).toBe('Cadd9');
+    // A bass under a different chord root: a slash chord.
+    expect(harmonyName(weights([[0, 4], [4, 4], [7, 6]]), 7)).toBe('C/G');
+    // A chromatic run: no chord explains it.
+    expect(harmonyName(weights([[0, 2], [1, 2], [2, 2], [3, 2], [4, 2]]), 0)).toBeNull();
+  });
+
+  it('names arpeggiated chords above the staff', () => {
+    // An A minor arpeggio, one note at a time, spanning more than an octave.
+    const arpeggio = [45, 52, 57, 60, 64, 60, 57, 52].map((p, i) => note(i * 0.25, p, 0.25));
+    const tex = toAlphaTex(arrange(arpeggio, { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 }), {
+      title: 't', bpm: 120, key: makeKey(9, 'minor'), instrument: guitar, tuning: standard,
+    });
+    expect(tex).toContain('ch "Am"');
+    // An arpeggio is not a chord shape: the diagram shows the standard one (x02210).
+    expect(tex).toContain('\\chord ("Am" 0 1 2 2 0 x)');
   });
 
   it('names ukulele chords by their root (re-entrant tuning has no bass)', () => {
@@ -624,5 +661,44 @@ describe('tempo changes', () => {
     expect(marks[0]).toEqual({ bar: 0, bpm: 100, visible: true });
     expect(marks.slice(1).every((m) => !m.visible)).toBe(true);
     expect(marks.length).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('voices', () => {
+  const options: ArrangeOptions = { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 };
+
+  it('writes ringing basses under a moving melody in a voice of their own', () => {
+    // Fingerstyle: a bass note per bar (whole bar) under quarter-note melody.
+    const notes = [0, 1, 2, 3].flatMap((bar) => [
+      note(bar * 2, [40, 45, 43, 40][bar], 1.9),
+      ...[0, 1, 2, 3].map((beat) => note(bar * 2 + beat * 0.5, [64, 67, 69, 71][beat], 0.45)),
+    ]);
+    const arrangement = arrange(notes, options);
+    expect(arrangement.bass).toBeDefined();
+    expect(arrangement.bass!.map((bar) => bar.map((b) => b.value))).toEqual([[1], [1], [1], [1]]);
+    expect(arrangement.bars[0].map((b) => b.notes.map((n) => n.pitch))).toEqual([[64], [67], [69], [71]]);
+
+    const staff = parseAlphaTex(toAlphaTex(arrangement, { title: 't', bpm: 120, key: makeKey(4, 'minor'), instrument: guitar, tuning: standard })).tracks[0].staves[0];
+    expect(staff.bars[0].voices).toHaveLength(2);
+    expect(staff.bars[0].voices[1].beats[0].notes[0].realValue).toBe(40);
+  });
+
+  it('keeps strummed chords in one voice', () => {
+    const strums = [0, 1, 2, 3].flatMap((beat) => [40, 47, 52, 56, 59, 64].map((p) => note(beat * 0.5, p, 0.45)));
+    expect(arrange(strums, options).bass).toBeUndefined();
+  });
+
+  it('can be turned off, and is not used on 4-string instruments', () => {
+    const notes = [0, 1, 2, 3].flatMap((bar) => [note(bar * 2, 40, 1.9), ...[0, 1, 2, 3].map((beat) => note(bar * 2 + beat * 0.5, 64 + beat, 0.45))]);
+    expect(arrange(notes, { ...options, voices: false }).bass).toBeUndefined();
+  });
+
+  it('lets the bass voice be edited', () => {
+    const notes = [0, 1, 2, 3].flatMap((bar) => [note(bar * 2, 40, 1.9), ...[0, 1, 2, 3].map((beat) => note(bar * 2 + beat * 0.5, 64 + beat * 2, 0.45))]);
+    const arrangement = arrange(notes, options);
+    const location = { bar: 0, beat: 0, string: 0, voice: 1 };
+    expect(findNote(arrangement, location)).toMatchObject({ pitch: 40, fret: 0 });
+    const result = applyEdit(notes, findNote(arrangement, location)!, location, { type: 'fret', fret: 3 }, { tuning: standard, capo: 0, frets: guitar.frets })!;
+    expect(findNote(arrange(result.notes, options), result.location!)).toMatchObject({ pitch: 43, fret: 3 });
   });
 });

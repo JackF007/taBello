@@ -16,7 +16,12 @@ connection needed: your files never leave your machine.
 - **Automatic detection** of tempo, key, time signature (4/4, 3/4, or a triplet feel for swing and
   shuffle; 6/8 can be chosen by hand), tuning (drop D, half step down, 5-string bass, low-G ukulele)
   and **capo** — every guess can be overridden from a menu, and the score updates instantly.
-- **Chord names and diagrams** above the staff, named after the shapes you play (relative to the capo).
+- **Chord names and diagrams** above the staff, named after the shapes you play (relative to the capo):
+  the harmony is read from whole bars or half bars, so arpeggios and fingerpicking get names too (Am,
+  C/G, G7, Em…), and each diagram is the shape you strum or the standard chart shape (x02210 for Am).
+- **Real notation**: in fingerstyle parts a held bass becomes a second voice (stems down) under the
+  melody, a piece that starts on an upbeat begins with a pickup bar (anacrusis), and note durations
+  follow how long the notes really ring.
 - **Playing techniques** (experimental): bends and releases, hammer-ons and pull-offs, slides (between
   notes, into and out of notes) and vibrato, recognized from the pitch contours and the pick attack.
 - **Tempo changes**: when a recording speeds up or slows down, the bar lines follow it and the score
@@ -102,7 +107,10 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
   frets (which look like bends) are not recognized.
 - Only notes can be edited (fret, string, pitch, delete); adding notes and changing rhythms is best done
   after exporting to Guitar Pro, MuseScore or TuxGuitar.
-- Very fast passages and dense chords can lose notes; overtones can occasionally add an octave note.
+- Very fast passages (16th notes above ~150 BPM) and dense chords can lose notes; overtones can
+  occasionally add an octave note.
+- The second voice is written for guitar parts with a held bass; bass, ukulele and strummed parts use
+  one voice. Chord names cover triads, sevenths, sus, add9, 6 and power chords, with slash basses.
 - Tempo changes are followed when they are gradual or sustained; rubato and free-time passages are not.
 - Isolation is limited to recordings of up to 10 minutes. Its model is downloaded separately because
   its weights are for personal and research use only (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
@@ -116,7 +124,10 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 2. **[Basic Pitch](https://github.com/spotify/basic-pitch-ts)**, Spotify's polyphonic note-detection model,
    runs locally with TensorFlow.js (WebAssembly backend) and lists the notes it hears.
 3. TaBello cleans the result: it removes quiet overtones and merges the phantom re-attacks the model
-   reports for notes that are still ringing. From Basic Pitch's pitch contours and the audio's pick
+   reports for notes that are still ringing (using the model's own onset strength: an echo of a
+   ringing string has almost none, a real re-pick a lot), recovers fast notes that the standard length
+   filter would drop when they have a clear onset and a steady pitch, and lines up the notes of a chord
+   that the model reports late. From Basic Pitch's pitch contours and the audio's pick
    clicks it measures how each note was played: attack strength, bends, glides and vibrato.
 4. It estimates the **tempo** (onset periodicity, then a dynamic-programming beat tracker for tempo
    changes), **key** (Krumhansl–Schmuckler profiles) and **time
@@ -125,7 +136,9 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 5. It detects the **tuning** and **capo** by comparing how playable the part is under each candidate, and
    chooses strings and frets with a Viterbi search that balances easy shapes against hand movement
    (notes played legato stay on one string). Unpicked notes become hammer-ons, pull-offs or slides.
-6. It names the **chords** from the notes struck together, and **[alphaTab](https://alphatab.net/)**
+6. It splits a held bass from the melody into two voices, names the **chords** from the harmony of
+   each bar (chord tones weighted by how long they ring, the bass note for slash chords), picks a
+   standard diagram for each one, and **[alphaTab](https://alphatab.net/)**
    renders the notation, tablature and chord diagrams and plays them back — with its own synthesizer
    or by following the original recording.
 
@@ -225,6 +238,12 @@ e2e/                      Playwright tests of the desktop app
 - **Measured post-processing**: on a synthetic plucked-string test (riff + strummed chords, 53 notes),
   raw Basic Pitch output has precision 0.48 / recall 0.89; TaBello's thresholds, overtone filtering and
   re-attack merging bring it to 0.83 / 0.85. A regression test guards these numbers.
+- **Notation quality is tested against the real scores**: the sample tracks are rendered from known
+  scores, transcribed, and the written notes compared with the originals in beats — pitch, position,
+  duration, voices, bar lines and chord names (`scripts/samples/notation.test.ts`). On those pieces the
+  notes are 95–100% right and durations 97–100%, Greensleeves went from 81% to 100% precision after
+  echo removal and fast 16th-note runs at 140 BPM from 17% to 85% recall (`fast.test.ts`). These are
+  synthetic recordings: please run the GuitarSet benchmark on real ones and share the numbers.
 
 ### Measuring accuracy
 

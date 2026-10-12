@@ -307,6 +307,68 @@ const CHORD_TYPES: [suffix: string, intervals: number[]][] = [
   ['aug', [0, 4, 8]],
   ['5', [0, 7]],
 ];
+/**
+ * Names the harmony of a passage from how long each pitch class sounds (weights[pc]), the way a
+ * musician hears the chord behind an arpeggio or a melody: the chord whose tones cover the most
+ * sounding time, non-chord tones (passing notes) counting against it. Added tones (7, 6, add9, sus)
+ * count only when they sound together with other notes (`together`: the time each pitch class sounds
+ * in a chord), so a melody passing through them keeps the plain triad; a sus chord needs the third
+ * to be missing. The bass helps choose the root. Returns null when no chord explains at least 75%.
+ */
+export interface Harmony {
+  root: number;
+  suffix: string;
+  intervals: number[];
+  /** Pitch class of the bass when it is not the root (a slash chord), else null. */
+  bass: number | null;
+}
+
+/** The chord's name, e.g. "Am", "G7", "C/G". */
+export function formatChord(chord: Harmony, flats = false): string {
+  const roots = flats ? FLAT_ROOTS : SHARP_ROOTS;
+  return roots[chord.root] + chord.suffix + (chord.bass === null ? '' : `/${roots[chord.bass]}`);
+}
+
+/** Intervals of a chord type by its suffix ("" major, "m", "7"…). */
+export function chordIntervals(suffix: string): number[] | undefined {
+  return CHORD_TYPES.find(([s]) => s === suffix)?.[1];
+}
+
+export function harmony(weights: number[], bass: number, withBass = true, together: number[] = weights): Harmony | null {
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  if (total === 0) return null;
+  const present = (pc: number, share: number) => weights[((pc % 12) + 12) % 12] >= total * share;
+  if (weights.filter((w) => w >= total * 0.05).length < 2) return null;
+
+  let best: { chord: Harmony; score: number; covered: number } | null = null;
+  for (let root = 0; root < 12; root++) {
+    if (!present(root, 0.08)) continue;
+    CHORD_TYPES.forEach(([suffix, intervals], order) => {
+      const tones = intervals.map((i) => (root + i) % 12);
+      // Every tone but the fifth must be heard.
+      if (!tones.every((t, k) => intervals[k] === 7 || present(t, 0.04))) return;
+      // Added tones (beyond root, third and fifth) must sound within chords, clearly.
+      const added = intervals.filter((i) => ![0, 3, 4, 7].includes(i));
+      if (added.some((i) => together[(root + i) % 12] < total * 0.12)) return;
+      // Sus chords only when no third is heard at all; power chords when nothing but root and fifth is.
+      if (suffix.startsWith('sus') && (present(root + 3, 0.04) || present(root + 4, 0.04))) return;
+      if (suffix === '5' && weights.some((w, pc) => w >= total * 0.04 && pc !== root && pc !== (root + 7) % 12)) return;
+      const covered = tones.reduce((sum, t) => sum + weights[t], 0);
+      const score = covered - 0.8 * (total - covered) - 0.02 * total * order + (root === bass ? 0.15 * total : 0);
+      if (!best || score > best.score) {
+        best = { chord: { root, suffix, intervals, bass: withBass && bass >= 0 && bass !== root ? bass : null }, score, covered };
+      }
+    });
+  }
+  const found = best as { chord: Harmony; covered: number } | null;
+  return found && found.covered >= total * 0.75 ? found.chord : null;
+}
+
+export function harmonyName(weights: number[], bass: number, flats = false, withBass = true, together: number[] = weights): string | null {
+  const found = harmony(weights, bass, withBass, together);
+  return found ? formatChord(found, flats) : null;
+}
+
 const SHARP_ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_ROOTS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
