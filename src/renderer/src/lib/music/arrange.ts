@@ -47,8 +47,16 @@ export interface TabBeat {
 }
 
 export interface Arrangement {
+  /** The bars of the (first) voice: everything, or the upper part when there is a bass voice. */
   bars: TabBeat[][];
+  /**
+   * A second voice for fingerstyle parts: bass notes that ring on under a moving melody, written with
+   * their own lengths (stems down in notation), as classical guitar music is. Same number of bars.
+   */
+  bass?: TabBeat[][];
   meter: Meter;
+  /** Ticks missing from bar 1 when it is a pickup (anacrusis); 0 when bar 1 is complete. */
+  pickup: number;
   /** Notes that could not be placed (e.g. more simultaneous notes than strings). */
   droppedNotes: number;
   /** Total fingering difficulty; lower is easier. Used to detect a capo or tuning. */
@@ -78,12 +86,16 @@ export interface ArrangeOptions {
   barPhase?: number;
   /** Write playing techniques (bends, slides, hammer-ons…) detected in the notes (default true). */
   techniques?: boolean;
+  /** Write sustained basses of fingerstyle parts in a voice of their own (default true; 6+ strings). */
+  voices?: boolean;
 }
 
 interface ChordPitch {
   pitch: number;
   velocity: number;
   sources: number[];
+  /** Where this pitch stops sounding (it may ring past the chord's other notes). */
+  endSlot: number;
   /** String requested by the user for this note, if any. */
   hint?: number;
 }
@@ -159,8 +171,9 @@ function quantize(notes: NoteEvent[], options: ArrangeOptions, meter: Meter, low
       existing.velocity = Math.max(existing.velocity, note.velocity);
       existing.sources.push(index);
       existing.hint ??= note.string;
+      existing.endSlot = Math.max(existing.endSlot, endSlot);
     } else {
-      chord.pitches.push({ pitch, velocity: note.velocity, sources: [index], hint: note.string });
+      chord.pitches.push({ pitch, velocity: note.velocity, sources: [index], hint: note.string, endSlot });
     }
     bySlot.set(slot, chord);
   });
@@ -170,7 +183,12 @@ function quantize(notes: NoteEvent[], options: ArrangeOptions, meter: Meter, low
   const shift = Math.floor(chords[0].slot / slotsPerBar) * slotsPerBar;
   const firstBar = origin + (barOrigin + shift) / meter.slotsPerBeat;
   return {
-    chords: chords.map((c) => ({ ...c, slot: c.slot - shift, endSlot: c.endSlot - shift })),
+    chords: chords.map((c) => ({
+      ...c,
+      slot: c.slot - shift,
+      endSlot: c.endSlot - shift,
+      pitches: c.pitches.map((p) => ({ ...p, endSlot: p.endSlot - shift })),
+    })),
     barTime: (bar) => grid.toTime(firstBar + bar * meter.beatsPerBar),
   };
 }
@@ -452,6 +470,67 @@ function assignTechniques(notes: NoteEvent[], playable: { chord: Chord }[], chos
   });
 }
 
+interface VoiceEvent {
+  slot: number;
+  endSlot: number;
+  notes: PlacedNote[];
+  /** End slot of each note (same order as notes). */
+  ends: number[];
+}
+
+/**
+ * Writes events one after the other: each lasts until it ends or the next one starts. Detected note
+ * ends are imprecise and plucked strings ring on, so a gap shorter than a beat is not a rest: the
+ * event is held across it; the last one rings to the end of its bar when that is less than a beat away.
+ * Bass notes ring much longer than they are detected: in a bass voice they are held up to a bar.
+ */
+function layOutVoice(events: VoiceEvent[], meter: Meter, holdSlots = meter.slotsPerBeat): { beatsByBar: Map<number, TabBeat[]>; end: number } {
+  const ticks = meterTicks(meter);
+  const slotsPerBar = ticks.bar / ticks.slot;
+  const beatsByBar = new Map<number, TabBeat[]>();
+  let cursor = 0;
+  events.forEach((event, i) => {
+    const start = event.slot * ticks.slot;
+    if (start > cursor) splitIntoBeats(cursor, start - cursor, [], meter, beatsByBar);
+    const next = events[i + 1]?.slot ?? Math.ceil((event.endSlot + 1e-9) / slotsPerBar) * slotsPerBar;
+    const endSlot = next - event.endSlot < holdSlots ? next : event.endSlot;
+    const end = Math.min(endSlot, next) * ticks.slot;
+    splitIntoBeats(start, end - start, event.notes, meter, beatsByBar);
+    cursor = end;
+  });
+  return { beatsByBar, end: cursor };
+}
+
+/**
+ * Fingerstyle texture: bass notes on the low strings that keep ringing while the melody moves on.
+ * When at least three bass notes (and 30% of them) outlast the next note by a beat or more, the
+ * basses go to a voice of their own; otherwise (strummed chords, single lines) there is one voice.
+ */
+function splitBassVoice(events: VoiceEvent[], meter: Meter): [VoiceEvent[], VoiceEvent[]] | null {
+  const bassIndex = events.map(({ notes }) => {
+    const lowest = notes.reduce((a, b) => (b.pitch < a.pitch ? b : a), notes[0]);
+    if (!lowest || lowest.string > 2) return -1;
+    const others = notes.filter((n) => n !== lowest);
+    const separate = others.length === 0 ? lowest.string <= 1 : Math.min(...others.map((n) => n.pitch)) - lowest.pitch >= 5;
+    return separate ? notes.indexOf(lowest) : -1;
+  });
+  const basses = events.map((_, i) => i).filter((i) => bassIndex[i] >= 0);
+  const sustained = basses.filter((i) => events[i + 1] && events[i].ends[bassIndex[i]] - events[i + 1].slot >= meter.slotsPerBeat);
+  const hasMelody = events.some((event, i) => event.notes.length > (bassIndex[i] >= 0 ? 1 : 0));
+  if (!hasMelody || sustained.length < 3 || sustained.length < basses.length * 0.3) return null;
+
+  const upper: VoiceEvent[] = [];
+  const bass: VoiceEvent[] = [];
+  events.forEach((event, i) => {
+    const b = bassIndex[i];
+    if (b >= 0) bass.push({ slot: event.slot, endSlot: event.ends[b], notes: [event.notes[b]], ends: [event.ends[b]] });
+    const notes = event.notes.filter((_, k) => k !== b);
+    const ends = event.ends.filter((_, k) => k !== b);
+    if (notes.length > 0) upper.push({ slot: event.slot, endSlot: Math.max(...ends), notes, ends });
+  });
+  return [upper, bass];
+}
+
 export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangement {
   const meter = METERS[options.meter ?? '4/4'];
   const ticks = meterTicks(meter);
@@ -462,7 +541,7 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
   };
   const tickSeconds = 60 / options.bpm / ticks.beat;
   if (notes.length === 0) {
-    return { bars: [wholeBar()], meter, droppedNotes: 0, cost: 0, startTime: 0, barTimes: [0, ticks.bar * tickSeconds], tickSeconds };
+    return { bars: [wholeBar()], meter, pickup: 0, droppedNotes: 0, cost: 0, startTime: 0, barTimes: [0, ticks.bar * tickSeconds], tickSeconds };
   }
 
   const capo = options.capo ?? 0;
@@ -500,34 +579,65 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
   );
   if (techniques) assignTechniques(notes, playable, chosen, legatoAttack);
 
-  // Each chord lasts until it ends or the next one starts. Detected note ends are imprecise and
-  // plucked strings ring on, so a gap shorter than a beat is not a rest: the chord is held across it.
-  const beatsByBar = new Map<number, TabBeat[]>();
-  let cursor = 0;
-  playable.forEach(({ chord }, i) => {
-    const start = chord.slot * ticks.slot;
-    if (start > cursor) splitIntoBeats(cursor, start - cursor, [], meter, beatsByBar);
-    // The last chord rings to the end of its bar when that is less than a beat away.
-    const next = playable[i + 1]?.chord.slot ?? Math.ceil((chord.endSlot + 1e-9) / (ticks.bar / ticks.slot)) * (ticks.bar / ticks.slot);
-    const endSlot = next - chord.endSlot < meter.slotsPerBeat ? next : chord.endSlot;
-    const end = Math.min(endSlot, next) * ticks.slot;
-    splitIntoBeats(start, end - start, chosen[i].notes, meter, beatsByBar);
-    cursor = end;
+  // The notes as events in time, with where each pitch stops sounding.
+  const events: VoiceEvent[] = playable.map(({ chord }, i) => ({
+    slot: chord.slot,
+    endSlot: chord.endSlot,
+    notes: chosen[i].notes,
+    ends: chosen[i].notes.map((note) => chord.pitches.find((p) => p.pitch === note.pitch)?.endSlot ?? chord.endSlot),
+  }));
+  const voices = options.voices !== false && options.tuning.length >= 6 ? splitBassVoice(events, meter) : null;
+  const laidOut = voices
+    ? [layOutVoice(voices[0], meter), layOutVoice(voices[1], meter, meter.slotsPerBeat * meter.beatsPerBar)]
+    : [layOutVoice(events, meter)];
+  const totalTicks = Math.max(ticks.bar, ...laidOut.map(({ end }) => Math.ceil(end / ticks.bar) * ticks.bar));
+  const [bars, bass] = laidOut.map(({ beatsByBar, end }) => {
+    // Pad the last bar with rests.
+    if (totalTicks > end) splitIntoBeats(end, totalTicks - end, [], meter, beatsByBar);
+    return Array.from({ length: totalTicks / ticks.bar }, (_, i) => beatsByBar.get(i) ?? wholeBar());
   });
-  // Pad the last bar with rests.
-  const totalTicks = Math.max(ticks.bar, Math.ceil(cursor / ticks.bar) * ticks.bar);
-  if (totalTicks > cursor) splitIntoBeats(cursor, totalTicks - cursor, [], meter, beatsByBar);
+  // A pickup: when every voice starts bar 1 with a beat or more of rests, bar 1 becomes an
+  // anacrusis holding only the pickup notes, as scores write it.
+  const voicesBars = bass ? [bars, bass] : [bars];
+  const beatTicks = (beat: TabBeat) => (48 / beat.value) * (beat.dotted ? 1.5 : 1) * (beat.tuplet ? 2 / 3 : 1);
+  const leadingRest = (beats: TabBeat[]) => {
+    let lead = 0;
+    for (const beat of beats) {
+      if (beat.notes.length > 0) break;
+      lead += beatTicks(beat);
+    }
+    return lead;
+  };
+  const leads = voicesBars.map((voice) => leadingRest(voice[0]));
+  const pickup = bars.length > 1 && Math.min(...leads) >= ticks.beat && Math.min(...leads) < ticks.bar ? Math.min(...leads) : 0;
+  if (pickup > 0) {
+    voicesBars.forEach((voice, v) => {
+      let dropped = 0;
+      const rest = voice[0].filter((beat) => {
+        if (dropped >= leads[v] || beat.notes.length > 0) return true;
+        dropped += beatTicks(beat);
+        return false;
+      });
+      // Rests this voice still needs after the pickup point.
+      const out = new Map<number, TabBeat[]>();
+      if (leads[v] > pickup) splitIntoBeats(pickup, leads[v] - pickup, [], meter, out);
+      voice[0] = [...(out.get(0) ?? []), ...rest];
+    });
+  }
 
-  const bars = Array.from({ length: totalTicks / ticks.bar }, (_, i) => beatsByBar.get(i) ?? wholeBar());
   const barTimes = Array.from({ length: bars.length + 1 }, (_, i) => grid.barTime(i));
+  // The score starts at the first written beat.
+  barTimes[0] += (pickup / ticks.bar) * (grid.barTime(1) - grid.barTime(0));
   return {
     bars,
+    ...(bass ? { bass } : {}),
     meter,
+    pickup,
     droppedNotes,
     cost: cost + droppedNotes * DROPPED_NOTE_COST,
     startTime: barTimes[0],
     barTimes,
-    tickSeconds: (barTimes[bars.length] - barTimes[0]) / totalTicks,
+    tickSeconds: (barTimes[bars.length] - barTimes[0]) / (totalTicks - pickup),
   };
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { chordLabels } from '../../src/renderer/src/lib/music/export';
 import { transcribeSample } from './engine';
 import { compareWithScore, type NotationScore } from './notation';
 import { PIECES } from './scores';
@@ -34,5 +35,21 @@ describe('notation quality on the samples', () => {
       expect(score.durations).toBeGreaterThanOrEqual(0.95);
       expect(score.shortRests).toBe(0);
     }
+  });
+});
+
+describe('chord names on the samples', () => {
+  it.each([
+    ['greensleeves', 'Am C G Em Am E Am C G Em Am E'],
+    ['romance', 'Em Am Em'],
+    ['minuet', 'G G/B C G/B Am G D G G/B C G/B Am G D'],
+    ['ode-to-joy', 'C G7 C G7 C G7 C'],
+    ['blues-lick', ''],
+  ])('%s: %s', { timeout: 120_000 }, async (id, expected) => {
+    const r = await transcribeSample(id);
+    const labels = chordLabels(r.arrangement, r.tuning.strings, r.instrument.frets, r.capo, r.key.flats, r.instrument.id !== 'ukulele');
+    const names = labels.flat().filter((l) => l !== null).map((l) => l.name);
+    // The harmony as written in the score (a final chord may be named differently).
+    expect(names.join(' ').startsWith(expected)).toBe(true);
   });
 });
