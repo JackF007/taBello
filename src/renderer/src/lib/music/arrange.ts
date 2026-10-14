@@ -112,6 +112,8 @@ interface Fingering {
   cost: number;
   /** Lowest fretted position, or null when only open strings are played (the hand can move freely). */
   position: number | null;
+  /** A quiet note of the chord left out (most likely an overtone heard as a note). */
+  dropped?: number;
 }
 
 // Written durations, longest first. Triplet values only appear in meters with a triplet feel.
@@ -131,6 +133,9 @@ const DURATIONS: { ticks: number; value: NoteValue; dotted: boolean; tuplet: boo
 const MAX_CANDIDATES = 12;
 /** Fingering cost charged for each note that had to be left out. */
 const DROPPED_NOTE_COST = 5;
+// A note quieter than this share of the chord's loudest may be left out, at this cost.
+const QUIET_NOTE = 0.8;
+const OPTIONAL_NOTE_COST = 8;
 
 export function meterTicks(meter: Meter) {
   const beat = TICKS_PER_QUARTER * meter.quartersPerBeat;
@@ -236,13 +241,24 @@ function fingerings(pitches: ChordPitch[], tuning: number[], frets: number): Fin
     .slice(0, MAX_CANDIDATES);
 }
 
-/** Fingering candidates for a chord, dropping its quietest notes until it becomes playable. */
+/**
+ * Fingering candidates for a chord, dropping its quietest notes until it becomes playable. A quiet
+ * note can also be left out at a price, as a guitarist would rather than leap up the neck for it:
+ * the Viterbi search takes that option only when keeping the note would mean an absurd position.
+ */
 function chordCandidates(chord: Chord, tuning: number[], frets: number): { candidates: Fingering[]; dropped: number } {
   const pitches = [...chord.pitches].sort((a, b) => b.velocity - a.velocity).slice(0, tuning.length);
   let dropped = chord.pitches.length - pitches.length;
   while (pitches.length > 0) {
     const candidates = fingerings(pitches, tuning, frets);
-    if (candidates.length > 0) return { candidates, dropped };
+    if (candidates.length > 0) {
+      const quietest = pitches[pitches.length - 1];
+      if (pitches.length >= 2 && quietest.velocity < pitches[0].velocity * QUIET_NOTE) {
+        const without = fingerings(pitches.slice(0, -1), tuning, frets).map((f) => ({ ...f, cost: f.cost + OPTIONAL_NOTE_COST, dropped: 1 }));
+        candidates.push(...without);
+      }
+      return { candidates, dropped };
+    }
     pitches.pop();
     dropped++;
   }
@@ -357,19 +373,36 @@ function piece(techniques: Techniques | undefined, first: boolean, last: boolean
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-/**
- * Attack (0..1) below which a note was not picked but hammered, pulled off or slid to. Relative to
- * the piece: when few notes show a pick click at all (fingerstyle bass, heavy compression), the cue
- * is unreliable and nothing is considered legato.
- */
 /** Widest interval (in semitones/frets) played legato: hammer-ons, pull-offs and slides. */
 const MAX_LEGATO_INTERVAL = 7;
+/** Seconds of music around a note that set what a picked note sounds like there. */
+const ATTACK_CONTEXT = 10;
 
-function legatoThreshold(notes: NoteEvent[]): number {
-  const attacks = notes.map((n) => n.attack).filter((a): a is number => a !== undefined).sort((a, b) => a - b);
-  if (attacks.length === 0) return -1;
-  const typical = attacks[attacks.length >> 1];
-  return typical < 0.4 ? -1 : Math.min(0.35, typical * 0.5);
+/**
+ * Attack (0..1) below which a note was not picked but hammered, pulled off or slid to, at each of
+ * the given times. Relative to the passage around it — a song can go from soft fingerpicking to a
+ * solo picked hard — and when few notes there show a pick click at all (fingerstyle, heavy
+ * compression), the cue is unreliable and nothing is considered legato.
+ */
+function legatoThresholds(notes: NoteEvent[], times: number[]): number[] {
+  const picked = notes.filter((n) => n.attack !== undefined).sort((a, b) => a.start - b.start);
+  const starts = picked.map((n) => n.start);
+  const firstAtOrAfter = (t: number) => {
+    let lo = 0;
+    let hi = starts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (starts[mid] < t) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  return times.map((t) => {
+    const attacks = picked.slice(firstAtOrAfter(t - ATTACK_CONTEXT), firstAtOrAfter(t + ATTACK_CONTEXT)).map((n) => n.attack!).sort((a, b) => a - b);
+    if (attacks.length === 0) return -1;
+    const typical = attacks[attacks.length >> 1];
+    return typical < 0.4 ? -1 : Math.min(0.35, typical * 0.5);
+  });
 }
 
 interface SourceArticulation {
@@ -403,7 +436,7 @@ function articulationOf(notes: NoteEvent[], sources: number[]): SourceArticulati
  * a note that was not picked, right after another on the same string, is a hammer-on/pull-off or,
  * when the pitch glided or the distance is too wide for the fingers, a slide.
  */
-function assignTechniques(notes: NoteEvent[], playable: { chord: Chord }[], chosen: Fingering[], legatoAttack: number): void {
+function assignTechniques(notes: NoteEvent[], playable: { chord: Chord }[], chosen: Fingering[], legatoAttack: number[]): void {
   const articulations = chosen.map((fingering) => fingering.notes.map((n) => articulationOf(notes, n.sources)));
   const set = (i: number, k: number, techniques: Techniques) => {
     const note = chosen[i].notes[k];
@@ -437,7 +470,7 @@ function assignTechniques(notes: NoteEvent[], playable: { chord: Chord }[], chos
     // contours is more often the ringing previous note than a shift slide.
     // A slide shows as a glide; without one, only a reach the fingers can hammer or pull (4 frets)
     // is believable — a wider unpicked jump is more likely a softly picked note.
-    if (b.attack !== undefined && b.attack < legatoAttack) {
+    if (b.attack !== undefined && b.attack < legatoAttack[i + 1]) {
       if (glides) {
         set(i, 0, { slide: 'legato' });
         reachedBySlide.add(i + 1);
@@ -559,12 +592,18 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
     if (candidates.length > 0) playable.push({ chord, candidates });
   }
   const techniques = options.techniques !== false;
-  const legatoAttack = legatoThreshold(notes);
+  const legatoAttack = legatoThresholds(
+    notes,
+    playable.map(({ chord }) => Math.min(...chord.pitches.flatMap((p) => p.sources.map((k) => notes[k].start)))),
+  );
   // A single note right after another, without a new attack or glided into, is on the same string.
   const legatoInto = playable.map(({ chord }, i) => {
     const previous = playable[i - 1]?.chord;
     if (!techniques || !previous || chord.pitches.length !== 1 || previous.pitches.length !== 1) return false;
     if (previous.endSlot < chord.slot - 1) return false;
+    // On one string the new note silences the previous one: a note still ringing well after the
+    // next starts (a bass under an arpeggio) was on another string, however softly it was picked.
+    if (previous.pitches[0].endSlot > chord.slot + 1) return false;
     const a = articulationOf(notes, previous.pitches[0].sources);
     const b = articulationOf(notes, chord.pitches[0].sources);
     const interval = chord.pitches[0].pitch - previous.pitches[0].pitch;
@@ -572,12 +611,13 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
     if (interval === 0 || Math.abs(interval) > MAX_LEGATO_INTERVAL) return false;
     const direction = Math.sign(interval);
     const glides = (a.slideOut ?? 0) * direction >= 0.5 || (b.slideIn ?? 0) * direction <= -0.5;
-    return glides || (b.attack !== undefined && b.attack < legatoAttack);
+    return glides || (b.attack !== undefined && b.attack < legatoAttack[i]);
   });
   const { chosen, cost } = chooseFingerings(
     playable.map((p) => p.candidates),
     legatoInto,
   );
+  droppedNotes += chosen.reduce((sum, f) => sum + (f.dropped ?? 0), 0);
   if (techniques) assignTechniques(notes, playable, chosen, legatoAttack);
 
   // The notes as events in time, with where each pitch stops sounding.
