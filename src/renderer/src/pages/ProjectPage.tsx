@@ -23,8 +23,8 @@ import { applyEdit, findNote, type NoteEdit, type NoteLocation } from '@/lib/mus
 import { toAlphaTex, toMidi } from '@/lib/music/export';
 import { toGuitarPro } from '@/lib/music/guitarPro';
 import { detectTempoChanges } from '@/lib/music/tempo';
-import { alphaTexPitch, detectKey, detectMeter, estimateTempo } from '@/lib/music/theory';
-import { projectMediaUrl, type ExportFormat, type NoteEvent, type Project, type ProjectSettings } from '../../../shared/ipc';
+import { alphaTexPitch, detectKey, detectMeter, estimateTempo, makeKey } from '@/lib/music/theory';
+import { MAX_TRANSPOSE, projectMediaUrl, type ExportFormat, type NoteEvent, type Project, type ProjectSettings } from '../../../shared/ipc';
 import { getTuning, INSTRUMENTS, MAX_CAPO, type InstrumentId } from '../../../shared/instruments';
 import { METERS, type MeterId } from '../../../shared/meters';
 
@@ -98,19 +98,31 @@ const ProjectEditor = ({ project }: { project: Project }) => {
     [detectionNotes, instrument, timing],
   );
   const tuning = settings.tuningId === null ? detectedTuning : getTuning(settings.instrument, settings.tuningId);
+  // Transposed, the part is written and played higher or lower than the recording.
+  const transpose = settings.transpose;
+  const shift = (list: NoteEvent[], semitones: number) => (semitones ? list.map((n) => ({ ...n, pitch: n.pitch + semitones })) : list);
+  const sounding = useMemo(() => shift(notes, transpose), [notes, transpose]);
+  const detectionSounding = useMemo(() => shift(detectionNotes, transpose), [detectionNotes, transpose]);
+  const shownKey = useMemo(() => (transpose ? makeKey((((key.tonic + transpose) % 12) + 12) % 12, key.mode) : key), [key, transpose]);
   const detectedCapo = useMemo(
-    () => detectCapo(detectionNotes, { tuning: tuning.strings, frets: instrument.frets, ...timing }, MAX_CAPO),
-    [detectionNotes, tuning, instrument, timing],
+    () => detectCapo(detectionSounding, { tuning: tuning.strings, frets: instrument.frets, ...timing }, MAX_CAPO),
+    [detectionSounding, tuning, instrument, timing],
   );
   const capo = settings.capo ?? detectedCapo;
+  // "Same shapes": moving the part up a semitone moves the capo up a fret, so the tab stays the same.
+  const [sameShapes, setSameShapes] = useState(true);
+  const canTranspose = (step: number) =>
+    Math.abs(transpose + step) <= MAX_TRANSPOSE && (!sameShapes || (capo + step >= 0 && capo + step <= MAX_CAPO));
+  const transposeBy = (step: number) =>
+    updateSettings({ ...settings, transpose: transpose + step, capo: sameShapes ? capo + step : settings.capo });
 
   const arrangement = useMemo(
-    () => arrange(notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo, techniques: settings.techniques }),
-    [notes, instrument, tuning, timing, capo, settings.techniques],
+    () => arrange(sounding, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo, techniques: settings.techniques }),
+    [sounding, instrument, tuning, timing, capo, settings.techniques],
   );
   const tex = useMemo(
-    () => toAlphaTex(arrangement, { title: project.title, bpm, key, instrument, tuning: tuning.strings, capo, chords: settings.chords }),
-    [arrangement, project.title, bpm, key, instrument, tuning, capo, settings.chords],
+    () => toAlphaTex(arrangement, { title: project.title, bpm, key: shownKey, instrument, tuning: tuning.strings, capo, chords: settings.chords }),
+    [arrangement, project.title, bpm, shownKey, instrument, tuning, capo, settings.chords],
   );
 
   // Settings apply instantly; saving to disk is debounced.
@@ -148,14 +160,15 @@ const ProjectEditor = ({ project }: { project: Project }) => {
 
   const edit = (change: NoteEdit) => {
     if (!selected || !selectedNote) return;
-    const result = applyEdit(notes, selectedNote, selected, change, editContext);
+    const result = applyEdit(sounding, selectedNote, selected, change, editContext);
     if (!result) {
       toast({ title: "Can't play that", description: 'That note does not fit on this string or neck.' });
       return;
     }
     setHistory((h) => [...h.slice(-99), notes]);
     setSelected(result.location);
-    saveNotes(result.notes);
+    // Edits are made in the written key and stored in the recording's.
+    saveNotes(shift(result.notes, -transpose));
   };
 
   const undo = () => {
@@ -222,7 +235,7 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const exportAs = async (format: ExportFormat) => {
     try {
       const data =
-        format === 'midi' ? toMidi(notes, { title: project.title, bpm: bpm * meter.quartersPerBeat, instrument }, arrangement)
+        format === 'midi' ? toMidi(sounding, { title: project.title, bpm: bpm * meter.quartersPerBeat, instrument }, arrangement)
         : format === 'gp' ? toGuitarPro(tex)
         : new TextEncoder().encode(tex);
       const result = await requireApi().exportFile({ format, suggestedName: project.title, data });
@@ -356,7 +369,44 @@ const ProjectEditor = ({ project }: { project: Project }) => {
         </Field>
 
         <Field label="Key">
-          <p className="h-10 flex items-center font-display text-lg">{key.name}</p>
+          <p className="h-10 flex items-center font-display text-lg">{shownKey.name}</p>
+        </Field>
+
+        <Field label="Transpose" htmlFor="transpose">
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" disabled={!canTranspose(-1)} onClick={() => transposeBy(-1)} aria-label="Transpose down" title="A semitone lower">
+              −
+            </Button>
+            <span id="transpose" className="w-10 text-center font-display tabular-nums" data-testid="transpose">
+              {transpose > 0 ? `+${transpose}` : transpose}
+            </span>
+            <Button variant="outline" size="sm" disabled={!canTranspose(1)} onClick={() => transposeBy(1)} aria-label="Transpose up" title="A semitone higher">
+              +
+            </Button>
+            <Toggle
+              pressed={sameShapes}
+              onPressedChange={setSameShapes}
+              aria-label="Same shapes with a capo"
+              title="Keep the same shapes and frets: the capo moves with the key (a capo makes the song sound higher)"
+              className="h-9 rounded-full border px-3 text-xs data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+            >
+              Same shapes (capo)
+            </Toggle>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={transpose === 0}
+              onClick={() => updateSettings({ ...settings, transpose: 0, capo: null })}
+              title="Back to the key of the recording"
+            >
+              Reset
+            </Button>
+          </div>
+          {transpose !== 0 && (
+            <p className="text-xs text-muted-foreground" data-testid="transpose-note">
+              Sounds {Math.abs(transpose)} semitone{Math.abs(transpose) === 1 ? '' : 's'} {transpose > 0 ? 'higher' : 'lower'} than the recording
+            </p>
+          )}
         </Field>
 
         <Toggle
@@ -414,7 +464,8 @@ const ProjectEditor = ({ project }: { project: Project }) => {
 
       <ScoreView
         tex={tex}
-        media={media}
+        // The recording cannot follow a transposed part.
+        media={transpose ? null : media}
         mediaOffset={arrangement.startTime}
         onNoteClick={editing ? setSelected : undefined}
         selected={editing ? selected : null}
