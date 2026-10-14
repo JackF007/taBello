@@ -1,7 +1,8 @@
 # Zero-cost distribution: no paid certificates.
 # - macOS: ad-hoc signed ("-"); users confirm the first launch in System Settings → Privacy & Security.
 # - Windows: unsigned; SmartScreen shows "More info → Run anyway" until the app builds reputation.
-# - Linux: AppImage, runs on any distribution without installation.
+# - Linux: AppImage (runs on any distribution without installation) and .deb.
+# The app icon is build/icon.png, rendered from build/icon.svg.
 appId: org.tabello.app
 productName: TaBello
 directories:
@@ -30,14 +31,33 @@ mac:
   identity: "-"
   hardenedRuntime: false
   target: dmg
+  artifactName: TaBello-${version}-mac-${arch}.${ext}
+dmg:
+  # The usual window: drag TaBello onto Applications.
+  title: TaBello
 win:
   target: nsis
+  artifactName: TaBello-Setup-${version}.${ext}
 nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
+  # One click: no questions and no administrator rights (installs for the current user), then
+  # TaBello opens. Shortcuts on the desktop and in the Start menu; uninstall from Settings → Apps.
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: TaBello
+  runAfterFinish: true
+  # Projects and the separation model stay when TaBello is uninstalled or updated.
+  deleteAppDataOnUninstall: false
 linux:
   category: Audio
-  target: AppImage
+  # AppImage runs on any distribution; the .deb installs with a double click on Ubuntu, Debian, Mint.
+  target: [AppImage, deb]
+  artifactName: TaBello-${version}-linux-${arch}.${ext}
+  executableName: tabello
+  syncDesktopName: true
+  synopsis: Turn recordings into guitar, bass and ukulele tabs
+  maintainer: JackF007 <45083625+JackF007@users.noreply.github.com>
 publish:
   provider: github
   releaseType: draft
