@@ -4,7 +4,7 @@ import { app } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { MAX_NOTES, type NoteEvent, type Project, type ProjectSettings, type ProjectSummary } from '../shared/ipc';
+import { MAX_NOTES, MAX_TRANSPOSE, type NoteEvent, type Project, type ProjectSettings, type ProjectSummary } from '../shared/ipc';
 import { INSTRUMENTS, isInstrumentId, MAX_CAPO, type InstrumentId } from '../shared/instruments';
 import { isMeterId } from '../shared/meters';
 
@@ -58,6 +58,7 @@ function normalizeSettings(settings: Partial<ProjectSettings>): ProjectSettings 
     chords: settings.chords ?? true,
     techniques: settings.techniques ?? true,
     tempoChanges: settings.tempoChanges ?? true,
+    transpose: Number.isInteger(settings.transpose) && Math.abs(settings.transpose!) <= MAX_TRANSPOSE ? settings.transpose! : 0,
   };
 }
 
@@ -67,7 +68,7 @@ function toSummary({ schemaVersion: _version, sourcePath: _path, ...summary }: S
 
 export function isValidSettings(value: unknown): value is ProjectSettings {
   if (typeof value !== 'object' || value === null) return false;
-  const { instrument, tuningId, tempo, capo, meter, chords, techniques, tempoChanges } = value as Record<string, unknown>;
+  const { instrument, tuningId, tempo, capo, meter, chords, techniques, tempoChanges, transpose } = value as Record<string, unknown>;
   return (
     isInstrumentId(instrument) &&
     (tuningId === null || INSTRUMENTS[instrument].tunings.some((t) => t.id === tuningId)) &&
@@ -76,7 +77,9 @@ export function isValidSettings(value: unknown): value is ProjectSettings {
     (meter === null || isMeterId(meter)) &&
     typeof chords === 'boolean' &&
     typeof techniques === 'boolean' &&
-    typeof tempoChanges === 'boolean'
+    typeof tempoChanges === 'boolean' &&
+    Number.isInteger(transpose) &&
+    Math.abs(transpose as number) <= MAX_TRANSPOSE
   );
 }
 
@@ -136,7 +139,7 @@ export async function createProject(input: {
     sourcePath: input.sourcePath,
     durationSeconds: input.durationSeconds,
     noteCount: input.notes.length,
-    settings: { instrument: input.instrument, tuningId: null, tempo: null, capo: null, meter: null, chords: true, techniques: true, tempoChanges: true },
+    settings: { instrument: input.instrument, tuningId: null, tempo: null, capo: null, meter: null, chords: true, techniques: true, tempoChanges: true, transpose: 0 },
     ...(input.isolated ? { isolated: true } : {}),
   };
   await writeJsonAtomic(path.join(dir, 'notes.json'), input.notes);

@@ -101,6 +101,8 @@ export interface SeparationModelStatus {
   sizeBytes: number;
 }
 
+export const MAX_TRANSPOSE = 12;
+
 export interface ProjectSettings {
   instrument: InstrumentId;
   /** One of the instrument's tunings; null means "use the detected tuning". */
@@ -117,6 +119,8 @@ export interface ProjectSettings {
   techniques: boolean;
   /** Follow tempo changes in the recording (otherwise the tempo is constant). */
   tempoChanges: boolean;
+  /** Semitones to move the whole part up or down (to suit a voice, or with a capo: same shapes, higher). */
+  transpose: number;
 }
 
 export interface ProjectSummary {
