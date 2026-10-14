@@ -28,10 +28,10 @@ export interface Piece {
   drums?: DrumHit[];
 }
 
-type Event = [pitch: number | number[] | null, beats: number];
+export type Event = [pitch: number | number[] | null, beats: number];
 
 /** Converts beats to seconds for a tempo that may change linearly from `from` to `to` BPM. */
-function clock(from: number, to = from, totalBeats = 1) {
+export function clock(from: number, to = from, totalBeats = 1) {
   return (beat: number) => {
     // Integral of 60 / bpm(b) db, with bpm(b) = from + (to - from) * b / totalBeats.
     if (from === to) return (beat * 60) / from;
@@ -41,7 +41,7 @@ function clock(from: number, to = from, totalBeats = 1) {
 }
 
 /** Lays out a sequence of [pitch, beats] events from a starting beat; chords are arrays. */
-function sequence(events: Event[], time: (beat: number) => number, options: { start?: number; legato?: number; amplitude?: number; strum?: number } = {}): ScoredNote[] {
+export function sequence(events: Event[], time: (beat: number) => number, options: { start?: number; legato?: number; amplitude?: number; strum?: number } = {}): ScoredNote[] {
   const notes: ScoredNote[] = [];
   let beat = options.start ?? 0;
   for (const [pitch, beats] of events) {

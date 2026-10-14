@@ -136,6 +136,24 @@ describe('arrange: ukulele (re-entrant tuning)', () => {
   });
 });
 
+describe('transposing with a capo', () => {
+  it('keeps the same shapes when the part and the capo move up together', () => {
+    const G = [43, 47, 50, 55, 59, 67];
+    const C = [48, 52, 55, 60, 64];
+    const D = [50, 57, 62, 66];
+    const melody = [67, 69, 71, 74, 72, 71, 69, 67];
+    const notes = [
+      ...[G, C, D, G].flatMap((chord, bar) => chord.map((p, i) => note(bar * 2 + i * 0.01, p, 0.9))),
+      ...melody.map((p, i) => note(1 + i * 0.5, p, 0.45)),
+    ];
+    const options = { tuning: standard, frets: guitar.frets, bpm: 120, offset: 0 };
+    const frets = (a: ReturnType<typeof arrange>) => a.bars.flat().map((b) => b.notes.map((n) => `${n.string}:${n.fret}`).join(' '));
+    const original = arrange(notes, { ...options, capo: 0 });
+    const higher = arrange(notes.map((n) => ({ ...n, pitch: n.pitch + 3 })), { ...options, capo: 3 });
+    expect(frets(higher)).toEqual(frets(original));
+  });
+});
+
 describe('detectCapo', () => {
   // Open chord shapes in standard tuning.
   const G = [43, 47, 50, 55, 59, 67];

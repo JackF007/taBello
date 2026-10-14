@@ -32,6 +32,9 @@ connection needed: your files never leave your machine.
   Tab numbers are colored by string.
 - **Play along with the original recording** (audio or video): the score follows it, and you can loop a
   passage and slow it down without changing its pitch.
+- **Transpose**, to suit a voice or a capo: move the part up or down a semitone at a time. With
+  *Same shapes (capo)* the tab and chord shapes stay the same and the capo moves (a capo on the 2nd
+  fret: the song sounds a tone higher); without it the part is refingered in the new key.
 - **Edit the tab**: click a note to change its fret, string or pitch, or delete it; undo, or restore
   the detected notes at any time.
 - **Isolate the instrument from a band recording** (optional): Demucs, a state-of-the-art source
@@ -49,14 +52,29 @@ connection needed: your files never leave your machine.
 
 ## Download and install
 
-Installers for Windows, macOS (Apple Silicon) and Linux will be published on the
-[Releases page](https://github.com/JackF007/taBello/releases); until the first release, run TaBello
-from source (see [Development](#development)). TaBello uses no paid code-signing certificates, so the
-first launch of an installed copy needs one extra click:
+No programming needed: download the installer for your computer from the
+[Releases page](https://github.com/JackF007/taBello/releases/latest) (under *Assets*), open it, and
+TaBello is ready. It works offline, has no account and costs nothing.
 
-- **Windows**: on the SmartScreen prompt, click *More info → Run anyway*.
-- **macOS**: open the app once, then go to *System Settings → Privacy & Security* and click *Open Anyway*.
-- **Linux**: make the AppImage executable (`chmod +x TaBello-*.AppImage`) and run it.
+| Your computer | File to download | How to install |
+| --- | --- | --- |
+| **Windows** 10 or 11 | `TaBello-Setup-<version>.exe` | Double-click it. TaBello installs (no administrator rights needed), adds an icon to the desktop and the Start menu, and opens. |
+| **Mac** with Apple Silicon (M1 or later) | `TaBello-<version>-mac-arm64.dmg` | Double-click it and drag TaBello onto *Applications*. |
+| **Linux** (Ubuntu, Debian, Mint…) | `TaBello-<version>-linux-amd64.deb` | Double-click it and choose *Install*. |
+| **Linux** (any other) | `TaBello-<version>-linux-x86_64.AppImage` | Right-click → *Properties* → *Allow executing as program*, then double-click it. |
+
+TaBello is free software and its installers are not signed with paid certificates, so the first time
+your computer asks for one extra confirmation:
+
+- **Windows**: if a blue "Windows protected your PC" window appears, click *More info*, then *Run anyway*.
+- **Mac**: if it says TaBello "cannot be opened", open *System Settings → Privacy & Security*, scroll
+  down and click *Open Anyway* (only the first time).
+
+To uninstall: on Windows, *Settings → Apps → TaBello → Uninstall*; on a Mac, drag TaBello from
+*Applications* to the Trash; on Linux, remove it from your software center. Your transcriptions stay
+in your user folder unless you delete them.
+
+Until the first release is published, TaBello can be run from source (see [Development](#development)).
 
 ## How to use it
 
@@ -108,7 +126,9 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 - Only notes can be edited (fret, string, pitch, delete); adding notes and changing rhythms is best done
   after exporting to Guitar Pro, MuseScore or TuxGuitar.
 - Very fast passages (16th notes above ~150 BPM) and dense chords can lose notes; overtones can
-  occasionally add an octave note.
+  occasionally add an octave note. Short notes on a bass's low E string (E1) are often missed.
+- A continuous stream of 16th notes can be heard as 8th notes at twice the tempo; press **½×**.
+- A transposed part plays with TaBello's synthesizer only: the original recording keeps its key.
 - The second voice is written for guitar parts with a held bass; bass, ukulele and strummed parts use
   one voice. Chord names cover triads, sevenths, sus, add9, 6 and power chords, with slash basses.
 - Tempo changes are followed when they are gradual or sustained; rubato and free-time passages are not.
@@ -244,6 +264,14 @@ e2e/                      Playwright tests of the desktop app
   notes are 95–100% right and durations 97–100%, Greensleeves went from 81% to 100% precision after
   echo removal and fast 16th-note runs at 140 BPM from 17% to 85% recall (`fast.test.ts`). These are
   synthetic recordings: please run the GuitarSet benchmark on real ones and share the numbers.
+- **Harder pieces** (`scripts/samples/complex.test.ts`) are rendered clean and "performed" (timing off by
+  up to ±15 ms, dynamics ±20%, room reverb and noise): Bach's Prelude BWV 1007 in 16ths, the Entertainer's
+  ragtime syncopation, a chord-melody Amazing Grace in 3/4, a funk bass line and a strummed rhythm part.
+  They check notes, durations, bar lines, tuning, capo and chord names. Fixes they led to: standard
+  tuning is kept unless a note requires another (the Entertainer had come out in D standard with a
+  capo), low notes heard just before they are plucked are dropped, a strum hitting a ringing string
+  again counts as a new note (recall 80% → 95%), a capo never cuts off a clear bass note, and chord
+  names follow the bass on the beat (an alternating bass is not an inversion).
 
 ### Measuring accuracy
 
@@ -286,6 +314,11 @@ Ideas, roughly by priority — contributions welcome:
 - [x] Write techniques: bends, slides, hammer-ons, pull-offs, vibrato (experimental)
 - [x] Tempo changes within a piece
 - [ ] Add notes and change rhythms in the editor
+- [x] Transpose, with a capo keeping the same shapes
+- [ ] Transpose the original recording too (pitch shifting), to play along in the new key
+- [ ] Code signing for free through an open-source program (e.g. SignPath Foundation), so Windows
+  stops asking for confirmation
+- [ ] Intel Mac builds
 
 ## Contributing
 
