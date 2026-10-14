@@ -223,7 +223,8 @@ test('offers to download the separation model', async () => {
   await expect(dialog).toContainText('Download the separation model');
   await expect(dialog).toContainText('personal and research use');
   await expect(dialog.getByRole('button', { name: 'Download' })).toBeVisible();
-  await page.keyboard.press('Escape');
+  // Pressed in the dialog: a key pressed while it is still opening can reach the page instead.
+  await dialog.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(page.locator('#isolate')).toHaveAttribute('aria-checked', 'false');
 });
