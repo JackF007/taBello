@@ -4,7 +4,8 @@ import ffmpegPath from 'ffmpeg-static';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { decodeAudio, detectNotes } from '../../src/main/transcription/pipeline';
-import { INSTRUMENTS } from '../../src/shared/instruments';
+import { INSTRUMENTS, type InstrumentId } from '../../src/shared/instruments';
+import type { NoteEvent } from '../../src/shared/ipc';
 import { getSample } from '../../src/shared/samples';
 import { arrange, detectCapo, detectTuning } from '../../src/renderer/src/lib/music/arrange';
 import { detectTempoChanges } from '../../src/renderer/src/lib/music/tempo';
@@ -19,10 +20,17 @@ export const samplePath = (id: string) => path.join(import.meta.dirname, '../../
 
 export async function transcribeSample(id: string) {
   const sample = getSample(id)!;
-  const instrument = INSTRUMENTS[sample.instrument];
   const audio = await decodeAudio(ffmpegPath!, samplePath(id));
-  const notes = await detectNotes(audio, { assets, minHz: instrument.minHz, maxHz: instrument.maxHz });
-  const tempo = estimateTempo(notes);
+  return { sample, ...(await transcribeAudio(audio, sample.instrument)) };
+}
+
+/** The engine on 22.05 kHz mono audio. */
+export async function transcribeAudio(audio: Float32Array, instrumentId: InstrumentId, options: { tempoScale?: number; notes?: NoteEvent[] } = {}) {
+  const instrument = INSTRUMENTS[instrumentId];
+  const notes = options.notes ?? (await detectNotes(audio, { assets, minHz: instrument.minHz, maxHz: instrument.maxHz }));
+  const estimate = estimateTempo(notes);
+  // As with the ½× and 2× buttons.
+  const tempo = { ...estimate, bpm: estimate.bpm * (options.tempoScale ?? 1) };
   const steady = detectMeter(notes, tempo);
   const changes = detectTempoChanges(notes, tempo.bpm);
   const beats = changes.variable ? changes.beats : undefined;
@@ -32,5 +40,5 @@ export async function transcribeSample(id: string) {
   const capo = detectCapo(notes, { tuning: tuning.strings, frets: instrument.frets, ...timing }, 9);
   const arrangement = arrange(notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo });
   const techniques = arrangement.bars.flat().flatMap((b) => b.notes).flatMap((n) => Object.keys(n.techniques ?? {}));
-  return { sample, instrument, notes, tempo, meter, changes, tuning, capo, key: detectKey(notes), arrangement, techniques };
+  return { instrument, notes, tempo, meter, changes, tuning, capo, key: detectKey(notes), arrangement, techniques };
 }
