@@ -110,16 +110,30 @@ export function chordLabels(
       );
       const pitches = sounding.map(({ note }) => note.pitch);
       if (sounding.length === 0 || (together < 2 && (pitches.length < 4 || Math.max(...pitches) - Math.min(...pitches) < 12))) return null;
+      // Each note counts for its written length, except the bass line: a bass note holds the harmony
+      // until the next one (the bass rings on a guitar while the melody moves above it).
+      const lowest = Math.min(...pitches);
+      const bassAt = (o: (typeof all)[number]) => {
+        const low = Math.min(...o.beat.notes.map((n) => n.pitch));
+        return low <= lowest + 7 ? low : null;
+      };
+      const bassOnsets = all.filter((o) => o.beat.notes.length > 0 && bassAt(o) !== null).map((o) => o.start);
       const weights = new Array<number>(12).fill(0);
       const chordal = new Array<number>(12).fill(0);
-      for (const { beat } of all) {
-        for (const note of beat.notes) {
+      for (const o of all) {
+        const bassPitch = bassAt(o);
+        for (const note of o.beat.notes) {
+          const length = note.pitch === bassPitch ? Math.min(to, ...bassOnsets.filter((b) => b > o.start)) - o.start : beatTicks(o.beat);
           const pc = (((note.pitch - capo) % 12) + 12) % 12;
-          weights[pc] += beatTicks(beat);
-          if (beat.notes.length >= 3) chordal[pc] += beatTicks(beat);
+          weights[pc] += length;
+          if (o.beat.notes.length >= 3) chordal[pc] += length;
         }
       }
-      const bass = (((Math.min(...pitches) - capo) % 12) + 12) % 12;
+      // The bass of the chord is the one on its first beat: an alternating bass (C, then G under a C
+      // chord) does not make an inversion.
+      const firstBeat = all.filter(({ start }) => start < all.reduce((min, a) => Math.min(min, a.start), Infinity) + ticks.beat);
+      const bassPitch = Math.min(...firstBeat.flatMap(({ beat }) => beat.notes.map((n) => n.pitch)).concat(firstBeat.length ? [] : pitches));
+      const bass = (((bassPitch - capo) % 12) + 12) % 12;
       const found = harmony(weights, bass, withBass, chordal);
       if (!found) return null;
       const chord = inContext(found);
@@ -140,17 +154,24 @@ export function chordLabels(
       }
       // alphaTex lists frets from the 1st (highest) string down.
       const diagram = [...shape].reverse();
-      return { name, frets: diagram, at: inside[0].i };
+      // Pitch classes clearly heard in this stretch.
+      const heard = weights.flatMap((w, pc) => (w >= weights.reduce((a, b) => a + b, 0) * 0.08 ? [pc] : []));
+      return { name, root: chord.root, tones, heard, frets: diagram, at: inside[0].i };
     };
 
     const whole = analyse(0, ticks.bar);
     let segments = whole ? [whole] : [];
-    // Two chords in one bar (4/4): when both halves are clear and different.
+    // Two chords in one bar (4/4): when both halves are clear and on different roots (passing tones
+    // and a moving bass under one chord are not a chord change).
     if (arrangement.meter.beatsPerBar >= 4) {
       const half = (arrangement.meter.beatsPerBar / 2) * ticks.beat;
       const first = analyse(0, half);
       const second = analyse(half, ticks.bar);
-      if (first && second && first.name !== second.name) segments = [first, second];
+      // The same notes heard under another name (Em, then G6 for its G–B–E upper strings) are no change.
+      // So is a chord inside the other (Bdim's B–D–F within G7).
+      const within = (a: NonNullable<typeof first>, b: NonNullable<typeof first>) =>
+        a.heard.every((pc) => b.tones.includes(pc)) || a.tones.every((pc) => b.tones.includes(pc));
+      if (first && second && first.root !== second.root && !within(second, first) && !within(first, second)) segments = [first, second];
     }
     for (const segment of segments) {
       if (segment.name === previous) continue;

@@ -185,6 +185,18 @@ test('transcribes a bundled sample', async () => {
   await expect(page.locator('label:has-text("Key") + p')).toHaveText('A minor');
   // The sample plays as the original recording.
   await expect(page.locator('audio')).toBeAttached();
+  await expect(page.getByRole('radio', { name: 'Original' })).toBeVisible();
+
+  // A capo moves the song up with the same shapes; the recording cannot follow it.
+  await page.getByRole('button', { name: 'Transpose up' }).click();
+  await page.getByRole('button', { name: 'Transpose up' }).click();
+  await expect(page.getByTestId('transpose')).toHaveText('+2');
+  await expect(page.locator('label:has-text("Key") + p')).toHaveText('B minor');
+  await expect(page.getByRole('status')).toContainText('Capo on the 2nd fret');
+  await expect(page.getByTestId('transpose-note')).toContainText('2 semitones higher');
+  await expect(page.getByRole('radio', { name: 'Original' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Reset' }).click();
+  await expect(page.getByTestId('transpose')).toHaveText('0');
 });
 
 test('isolates the bass of the band sample', async () => {

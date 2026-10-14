@@ -6,6 +6,7 @@
   "license": "GPL-3.0-or-later",
   "author": "TaBello contributors",
   "homepage": "https://github.com/JackF007/taBello",
+  "desktopName": "tabello.desktop",
   "repository": {
     "type": "git",
     "url": "https://github.com/JackF007/taBello.git"
