@@ -99,6 +99,8 @@ interface ChordPitch {
   endSlot: number;
   /** String requested by the user for this note, if any. */
   hint?: number;
+  /** Bent, slid or shaken (vibrato): the note needs a fretting finger, not an open string. */
+  fretted?: boolean;
 }
 
 interface Chord {
@@ -133,6 +135,21 @@ const DURATIONS: { ticks: number; value: NoteValue; dotted: boolean; tuplet: boo
 const MAX_CANDIDATES = 12;
 /** Fingering cost charged for each note that had to be left out. */
 const DROPPED_NOTE_COST = 5;
+// A string left out in the middle of a chord (muted by a finger).
+const SKIPPED_STRING_COST = 1.5;
+// Lead lines: notes either side that set the context, and the cost of an open string there.
+const LEAD_CONTEXT = 6;
+const OPEN_STRING_IN_LEAD_COST = 1.5;
+// Cost per fret of playing higher on the neck (chords and simple melodies sit low).
+const LOW_NECK_PREFERENCE = 0.15;
+// Cost per fret above the 12th (chords and accompaniment rarely go there).
+const HIGH_NECK_COST = 0.5;
+// Lead lines: preference (per note) for the first box of the key.
+const FIRST_BOX_PREFERENCE = 0.4;
+// The fretting hand: reaching a fret beyond its four, and moving it (plus per fret moved).
+const STRETCH_COST = 0.3;
+const SHIFT_COST = 0.6;
+const SHIFT_FRET_COST = 0.25;
 // A note quieter than this share of the chord's loudest may be left out, at this cost.
 const QUIET_NOTE = 0.8;
 const OPTIONAL_NOTE_COST = 8;
@@ -154,6 +171,12 @@ interface Grid {
   /** Recording time at which a bar (0 = the first) starts. */
   barTime: (bar: number) => number;
 }
+
+/**
+ * A bend or vibrato is made by a finger on a fret: impossible on an open string. (Slides too, but a
+ * detected glide is less certain: it does not decide the fingering.)
+ */
+const needsFinger = (note: NoteEvent) => !!(note.bend || note.vibrato);
 
 function quantize(notes: NoteEvent[], options: ArrangeOptions, meter: Meter, lowest: number, highest: number): Grid {
   const grid = options.beats && options.beats.length >= 2 ? beatGrid(options.beats) : constantGrid(options.bpm, options.offset);
@@ -178,8 +201,9 @@ function quantize(notes: NoteEvent[], options: ArrangeOptions, meter: Meter, low
       existing.sources.push(index);
       existing.hint ??= note.string;
       existing.endSlot = Math.max(existing.endSlot, endSlot);
+      existing.fretted ||= needsFinger(note);
     } else {
-      chord.pitches.push({ pitch, velocity: note.velocity, sources: [index], hint: note.string, endSlot });
+      chord.pitches.push({ pitch, velocity: note.velocity, sources: [index], hint: note.string, endSlot, fretted: needsFinger(note) });
     }
     bySlot.set(slot, chord);
   });
@@ -209,13 +233,13 @@ function fingerings(pitches: ChordPitch[], tuning: number[], frets: number): Fin
       results.push([...acc]);
       return;
     }
-    const { pitch, hint, sources } = sorted[i];
+    const { pitch, hint, sources, fretted } = sorted[i];
     // A string chosen by the user wins whenever that string can play the note.
     const hinted = hint !== undefined && hint < tuning.length && pitch - tuning[hint] >= 0 && pitch - tuning[hint] <= frets;
     for (let string = 0; string < tuning.length; string++) {
       if (hinted && string !== hint) continue;
       const fret = pitch - tuning[string];
-      if (used.has(string) || fret < 0 || fret > frets) continue;
+      if (used.has(string) || fret < 0 || fret > frets || (fret === 0 && fretted)) continue;
       used.add(string);
       acc.push({ string, fret, pitch, tied: false, sources });
       assign(i + 1, used, acc);
@@ -232,9 +256,16 @@ function fingerings(pitches: ChordPitch[], tuning: number[], frets: number): Fin
       const span = fretted.length > 0 ? Math.max(...fretted) - Math.min(...fretted) : 0;
       const averageFret = notes.reduce((s, n) => s + n.fret, 0) / notes.length;
       const highestFret = Math.max(...notes.map((n) => n.fret));
+      // Strings skipped inside a chord must be muted by the fingers: chord shapes use adjacent strings.
+      // (Not between a bass and a melody note far above it: a pinch in fingerpicking skips strings.)
+      const byString = [...notes].sort((a, b) => a.string - b.string);
+      const skipped = byString
+        .slice(1)
+        .reduce((sum, n, i) => sum + (Math.abs(n.pitch - byString[i].pitch) <= 7 ? n.string - byString[i].string - 1 : 0), 0);
       // Stretches beyond 4 frets are barely playable; otherwise prefer compact shapes low on the neck,
       // and avoid the top of the neck unless nothing else works.
-      const cost = (span > 4 ? 10 + span * 2 : span * 0.5) + averageFret * 0.15 + Math.max(0, highestFret - 12) * 0.5;
+      const cost =
+        (span > 4 ? 10 + span * 2 : span * 0.5) + averageFret * LOW_NECK_PREFERENCE + Math.max(0, highestFret - 12) * HIGH_NECK_COST + skipped * SKIPPED_STRING_COST;
       return { notes: notes.sort((a, b) => a.string - b.string), cost, position };
     })
     .sort((a, b) => a.cost - b.cost)
@@ -250,7 +281,9 @@ function chordCandidates(chord: Chord, tuning: number[], frets: number): { candi
   const pitches = [...chord.pitches].sort((a, b) => b.velocity - a.velocity).slice(0, tuning.length);
   let dropped = chord.pitches.length - pitches.length;
   while (pitches.length > 0) {
-    const candidates = fingerings(pitches, tuning, frets);
+    let candidates = fingerings(pitches, tuning, frets);
+    // A note heard as bent or shaken that only an open string can play: the open string after all.
+    if (candidates.length === 0 && pitches.some((p) => p.fretted)) candidates = fingerings(pitches.map((p) => ({ ...p, fretted: false })), tuning, frets);
     if (candidates.length > 0) {
       const quietest = pitches[pitches.length - 1];
       if (pitches.length >= 2 && quietest.velocity < pitches[0].velocity * QUIET_NOTE) {
@@ -271,19 +304,35 @@ function chordCandidates(chord: Chord, tuning: number[], frets: number): { candi
  */
 function chooseFingerings(candidateLists: Fingering[][], legatoInto: boolean[] = []): { chosen: Fingering[]; cost: number } {
   if (candidateLists.length === 0) return { chosen: [], cost: 0 };
-  // The hand covers about four frets without shifting, so small moves are nearly free. Open strings
-  // leave the hand where it was, but give it time to move: shifts across them cost half.
-  const move = (from: number | null, to: Fingering, acrossOpen: boolean) => {
-    if (from === null || to.position === null) return 0;
-    const distance = Math.abs(from - to.position);
-    return (Math.max(0, distance - 3) * 0.8 + distance * 0.1) * (acrossOpen ? 0.5 : 1);
+  // The fretting hand sits in a position: the index finger on a fret and one finger per fret above
+  // it, four frets in all. Where exactly is open until the notes tell: after a note on the 3rd fret
+  // the index can be anywhere from the 1st to the 3rd. So the hand is a range of index frets, which
+  // narrows as notes are played. A note that fits costs nothing; one a fret beyond is a stretch; one
+  // outside moves the hand the nearest way, which costs a little more the farther it goes. Open
+  // strings leave the hand where it is, and give it time to move: shifts across them cost half.
+  type Hand = [number, number] | null;
+  const reach = (from: Hand, to: Fingering, acrossOpen: boolean): { cost: number; hand: Hand } => {
+    const frets = to.notes.filter((n) => n.fret > 0).map((n) => n.fret);
+    if (frets.length === 0) return { cost: 0, hand: from };
+    const low = Math.min(...frets);
+    const high = Math.max(...frets);
+    // Index positions that cover these notes (a span beyond four frets: index on the lowest).
+    const needed: [number, number] = high - low > 3 ? [low, low] : [Math.max(1, high - 3), low];
+    if (from === null) return { cost: 0, hand: needed };
+    const overlap: [number, number] = [Math.max(from[0], needed[0]), Math.min(from[1], needed[1])];
+    if (overlap[0] <= overlap[1]) return { cost: high - low > 3 ? STRETCH_COST : 0, hand: overlap };
+    // A fret beyond the hand's reach: stretch rather than move.
+    const gap = needed[0] > from[1] ? needed[0] - from[1] : from[0] - needed[1];
+    if (gap === 1) return { cost: STRETCH_COST, hand: from };
+    const cost = (SHIFT_COST + gap * SHIFT_FRET_COST) * (acrossOpen ? 0.5 : 1);
+    return { cost, hand: needed };
   };
 
   const costs: number[][] = [];
   const back: number[][] = [];
   // Where the hand is after each candidate (the last fretted position on the best path to it), and
   // whether only open strings were played since.
-  const hand: (number | null)[][] = [];
+  const hand: Hand[][] = [];
   const open: boolean[][] = [];
   candidateLists.forEach((candidates, i) => {
     costs.push([]);
@@ -294,7 +343,7 @@ function chooseFingerings(candidateLists: Fingering[][], legatoInto: boolean[] =
       if (i === 0) {
         costs[i][j] = candidate.cost;
         back[i][j] = -1;
-        hand[i][j] = candidate.position;
+        hand[i][j] = reach(null, candidate, false).hand;
         open[i][j] = candidate.position === null;
         return;
       }
@@ -308,12 +357,12 @@ function chooseFingerings(candidateLists: Fingering[][], legatoInto: boolean[] =
           legatoInto[i] && previous.notes.length === 1 && candidate.notes.length === 1 && previous.notes[0].string !== candidate.notes[0].string
             ? 8
             : 0;
-        const total = costs[i - 1][k] + move(hand[i - 1][k], candidate, open[i - 1][k]) + stringChange;
+        const total = costs[i - 1][k] + reach(hand[i - 1][k], candidate, open[i - 1][k]).cost + stringChange;
         if (total < best) [best, bestK] = [total, k];
       });
       costs[i][j] = best + candidate.cost;
       back[i][j] = bestK;
-      hand[i][j] = candidate.position ?? hand[i - 1][bestK];
+      hand[i][j] = reach(hand[i - 1][bestK], candidate, open[i - 1][bestK]).hand;
       open[i][j] = candidate.position === null;
     });
   });
@@ -591,6 +640,40 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
     droppedNotes += dropped;
     if (candidates.length > 0) playable.push({ chord, candidates });
   }
+  // A lead line (single notes with bends or vibrato nearby) is played in a box, fingers on the frets:
+  // open strings there cost more, as they cannot be bent, shaken or muted like the notes around them.
+  // Most lead lines sit in the "first box": the hand on the key's tonic on the low string (A minor:
+  // the 5th fret), one finger per fret.
+  let box: number | null = null;
+  const boxOf = () => {
+    if (box === null) {
+      const key = detectKey(notes);
+      const tonic = key.mode === 'major' ? (key.tonic + 9) % 12 : key.tonic; // the relative minor's
+      box = ((tonic - tuning[0]) % 12 + 12) % 12;
+      if (box < 3) box += 12;
+    }
+    return box;
+  };
+  playable.forEach((entry, i) => {
+    const around = playable.slice(Math.max(0, i - LEAD_CONTEXT), i + LEAD_CONTEXT + 1);
+    const single = around.filter((p) => p.chord.pitches.length === 1).length >= around.length * 0.8;
+    // No bass under it (a fingerstyle melody with its bass is not a lead line).
+    const bassless = around.filter((p) => p.chord.pitches.some((pitch) => pitch.pitch < tuning[0] + 7)).length <= 1;
+    const lead = single && bassless && around.some((p) => p.chord.pitches.some((pitch) => pitch.fretted));
+    if (!lead) return;
+    // And lead players choose a position for the scale, not for being low on the neck.
+    entry.candidates = entry.candidates.map((c) => {
+      const averageFret = c.notes.reduce((sum, n) => sum + n.fret, 0) / c.notes.length;
+      const inBox = c.notes.filter((n) => n.fret >= boxOf() - 1 && n.fret <= boxOf() + 3).length;
+      // Soloing up to the 17th fret is ordinary.
+      const high = Math.max(0, Math.min(17, Math.max(...c.notes.map((n) => n.fret))) - 12) * HIGH_NECK_COST;
+      return {
+        ...c,
+        cost:
+          c.cost + c.notes.filter((n) => n.fret === 0).length * OPEN_STRING_IN_LEAD_COST - averageFret * LOW_NECK_PREFERENCE - inBox * FIRST_BOX_PREFERENCE - high,
+      };
+    });
+  });
   const techniques = options.techniques !== false;
   const legatoAttack = legatoThresholds(
     notes,
