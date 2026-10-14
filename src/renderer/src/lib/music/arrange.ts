@@ -4,6 +4,7 @@ import type { NoteEvent } from '../../../../shared/ipc';
 import type { Tuning } from '../../../../shared/instruments';
 import { METERS, type Meter, type MeterId } from '../../../../shared/meters';
 import { anchorBeat, beatGrid, constantGrid } from './tempo';
+import { detectKey } from './theory';
 
 /** Durations are counted in ticks: 12 per quarter note, so both 16th notes (3) and triplets (4) are whole numbers. */
 export const TICKS_PER_QUARTER = 12;
@@ -672,9 +673,10 @@ export function detectCapo(notes: NoteEvent[], options: FingeringOptions, maxCap
   const baseline = arrange(notes, { ...options, capo: 0 }).cost;
   let best = { capo: 0, cost: baseline };
   for (let capo = 1; capo <= maxCapo; capo++) {
-    const tooLow = notes.filter((n) => n.pitch < lowestString + capo).length;
-    // A few stray low notes (noise, harmonics) are tolerated; more means no capo this high.
-    if (tooLow > notes.length * 0.02) break;
+    const tooLow = notes.filter((n) => n.pitch < lowestString + capo);
+    // A few stray low notes (noise, harmonics) are tolerated; more, or a clear bass note (picked and
+    // ringing), means no capo this high.
+    if (tooLow.length > notes.length * 0.02 || tooLow.some((n) => n.duration >= 0.2 && n.velocity >= 0.4 && Math.max(n.onset ?? 1, n.attack ?? 1) >= 0.5)) break;
     // Open-shape chords with a capo have their bass on the capoed low strings.
     if (lowestNote > secondLowestString + capo) continue;
     const { cost } = arrange(notes, { ...options, capo });
@@ -684,11 +686,17 @@ export function detectCapo(notes: NoteEvent[], options: FingeringOptions, maxCap
   return best.cost < baseline * 0.8 ? best.capo : 0;
 }
 
+// Keys whose chords are open shapes in standard tuning.
+const OPEN_MAJOR_KEYS = [0, 2, 4, 7, 9]; // C D E G A
+const OPEN_MINOR_KEYS = [2, 4, 9]; // Dm Em Am
+
 /**
  * Picks the most likely tuning among the instrument's common ones (the first is the default).
  * A tuning is ruled out when more than 2% of the notes are below its lowest string — that is how a
- * drop D, a 5-string bass or a low-G ukulele shows up. Otherwise another tuning must make the
- * fingerings clearly easier than the default, as with songs played tuned half a step down.
+ * drop D, a 5-string bass or a low-G ukulele shows up. When the default tuning can play every note,
+ * only a whole retuning (every string lowered alike, as half a step down) is considered, and only
+ * when it turns an awkward key into open shapes (E♭ played as E) and makes the part clearly easier:
+ * open strings elsewhere make many parts a little easier without anyone retuning for them.
  */
 export function detectTuning(notes: NoteEvent[], tunings: Tuning[], options: Omit<FingeringOptions, 'tuning'>): Tuning {
   const candidates = tunings.filter((t) => t.autoDetect !== false);
@@ -704,6 +712,17 @@ export function detectTuning(notes: NoteEvent[], tunings: Tuning[], options: Omi
   const baseline = results[0];
   const playable = results.filter((r) => r.playable).sort((a, b) => a.cost - b.cost);
   if (!baseline.playable) return playable[0]?.tuning ?? standard;
-  const best = playable[0];
+
+  const key = detectKey(notes);
+  const open = (tonic: number) => ((key.mode === 'major' ? OPEN_MAJOR_KEYS : OPEN_MINOR_KEYS).includes(((tonic % 12) + 12) % 12));
+  const shiftOf = (tuning: Tuning) => {
+    const shift = tuning.strings[0] - standard.strings[0];
+    return tuning.strings.length === standard.strings.length && tuning.strings.every((p, i) => p - standard.strings[i] === shift) ? shift : null;
+  };
+  const retuned = playable.filter((r) => {
+    const shift = shiftOf(r.tuning);
+    return r === baseline || (shift !== null && shift !== 0 && !open(key.tonic) && open(key.tonic - shift));
+  });
+  const best = retuned[0];
   return best.cost < baseline.cost * 0.8 ? best.tuning : standard;
 }

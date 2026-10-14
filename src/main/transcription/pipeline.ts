@@ -196,7 +196,10 @@ export function mergeRetriggeredNotes(notes: NoteEvent[]): NoteEvent[] {
     // echo (it is inferred from the sustained energy), whereas it fires for a string picked again,
     // however softly.
     const echo = previous !== undefined && note.onset !== undefined && note.onset < 0.4 && gap > -0.05 && gap < 0.6;
-    if (previous && ((contiguous && weaker) || echo)) {
+    // A string picked again (a strum hitting it once more), even a little softer: the onset detector
+    // fires clearly and the pick is heard.
+    const repicked = note.onset !== undefined && note.onset >= 0.85 && (note.attack ?? 0) >= 0.5;
+    if (previous && ((contiguous && weaker && !repicked) || echo)) {
       previous.duration = Number((note.start + note.duration - previous.start).toFixed(4));
       continue;
     }
@@ -205,6 +208,30 @@ export function mergeRetriggeredNotes(notes: NoteEvent[]): NoteEvent[] {
     lastByPitch.set(note.pitch, copy);
   }
   return merged;
+}
+
+/**
+ * Low notes are analysed over long windows, so Basic Pitch can hear one shortly before it is
+ * plucked: a short fragment without any pick click that runs into the same pitch, clearly attacked.
+ */
+export function dropPreEchoes(notes: NoteEvent[]): NoteEvent[] {
+  return notes.filter(
+    (early) =>
+      !(
+        early.duration < 0.25 &&
+        early.attack !== undefined &&
+        early.attack < 0.2 &&
+        notes.some(
+          (real) =>
+            real !== early &&
+            real.pitch === early.pitch &&
+            real.start > early.start &&
+            real.start - early.start < 0.3 &&
+            real.start - (early.start + early.duration) < 0.05 &&
+            (real.attack ?? 1) >= 0.5,
+        )
+      ),
+  );
 }
 
 /**
@@ -297,5 +324,5 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
       ...analyzeArticulation(events[i], note.startTimeSeconds, context),
     }))
     .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
-  return mergeBends(alignInferredOnsets(mergeRetriggeredNotes(removeHarmonics(notes)))).sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+  return mergeBends(alignInferredOnsets(mergeRetriggeredNotes(dropPreEchoes(removeHarmonics(notes))))).sort((a, b) => a.start - b.start || a.pitch - b.pitch);
 }
