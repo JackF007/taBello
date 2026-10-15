@@ -103,6 +103,9 @@ export interface SeparationModelStatus {
 
 export const MAX_TRANSPOSE = 12;
 
+export type PartId = 'all' | 'melody' | 'accompaniment';
+export const PART_IDS: readonly PartId[] = ['all', 'melody', 'accompaniment'];
+
 export interface ProjectSettings {
   instrument: InstrumentId;
   /** One of the instrument's tunings; null means "use the detected tuning". */
@@ -121,6 +124,8 @@ export interface ProjectSettings {
   tempoChanges: boolean;
   /** Semitones to move the whole part up or down (to suit a voice, or with a capo: same shapes, higher). */
   transpose: number;
+  /** Which part to write: everything, the melody on top (a lead guitar) or the accompaniment under it. */
+  part: PartId;
 }
 
 export interface ProjectSummary {
