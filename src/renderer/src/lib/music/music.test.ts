@@ -46,6 +46,27 @@ describe('theory', () => {
     expect(detectKey(aMinor)).toMatchObject({ name: 'A minor', alphaTex: 'aminor' });
   });
 
+  it('hears the key a piece starts and ends in, and its final cadence', () => {
+    // An arpeggio over Am – C/G – D/F# – D7/F# – G/D – D/F# – E – Am, as in a fingerpicked ballad: the
+    // long D chords alone make it sound like D major (as it was transcribed before).
+    const shapes = [[45, 52, 57, 60], [43, 52, 55, 62], [42, 50, 57, 62], [42, 50, 57, 60], [43, 50, 55, 62], [42, 50, 57, 62], [40, 52, 56, 59], [45, 52, 57, 60]];
+    const notes = shapes.flatMap((shape, bar) => [...shape, ...shape].map((p, i) => note(bar * 2.4 + i * 0.3, p, i % 4 === 0 ? 2.4 : 1.2)));
+    expect(detectKey(notes).name).toBe('A minor');
+  });
+
+  it('puts the beat on the bass notes of an even stream of 8ths', () => {
+    // 8ths at 100 BPM: the bass (long, low) on the beats, louder treble notes on the off-beats.
+    const period = 0.6;
+    const notes = Array.from({ length: 32 }, (_, i) =>
+      i % 2 === 0 ? note(1 + i * (period / 2), 45, period * 2, 0.6) : note(1 + i * (period / 2), 64, period / 2, 0.9),
+    );
+    const { bpm, offset } = estimateTempo(notes);
+    expect(bpm).toBeCloseTo(100, 0);
+    // The grid's beats fall on the bass notes (times 1, 1.6, 2.2…), not between them.
+    const phase = (((offset - 1) % period) + period) % period;
+    expect(Math.min(phase, period - phase)).toBeLessThan(0.05);
+  });
+
   it.each([90, 100, 128, 150])('estimates a steady %i BPM', (bpm) => {
     const rand = random(bpm);
     const beat = 60 / bpm;

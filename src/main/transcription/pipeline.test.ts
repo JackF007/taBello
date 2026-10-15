@@ -78,6 +78,16 @@ describe('removeHarmonics', () => {
     const notes = [note(0, 40, 0.8), note(0, 52, 0.7)];
     expect(removeHarmonics(notes)).toHaveLength(2);
   });
+
+  it("drops a bright string's octave that dies away early, unless it is part of a chord", () => {
+    // A bass picked alone on an acoustic guitar: its octave is heard briefly, a little quieter.
+    const bass = { start: 0, duration: 2, pitch: 45, velocity: 0.67 };
+    const overtone = { start: 0.02, duration: 0.3, pitch: 57, velocity: 0.48 };
+    expect(removeHarmonics([bass, overtone])).toEqual([bass]);
+    // The same octave struck with other notes of a chord is played.
+    const third = { start: 0.01, duration: 0.3, pitch: 60, velocity: 0.5 };
+    expect(removeHarmonics([bass, overtone, third])).toHaveLength(3);
+  });
 });
 
 describe('mergeRetriggeredNotes', () => {
