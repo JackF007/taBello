@@ -28,10 +28,12 @@ connection needed: your files never leave your machine.
   carries the tempo changes (also in Guitar Pro and MIDI exports).
 - **Fingerings like a guitar teacher's**: the fretting hand sits in a position (one finger per fret) and
   moves only when it has to; chords use adjacent strings (a G5 is 355, not 3x0), bent and shaken notes
-  are fretted, and lead lines sit in a box (the key's first box: A minor at the 5th fret). Checked
-  note by note on a benchmark of 13 passages tabbed by hand (all right).
+  are fretted, lead lines sit in a box (the key's first box: A minor at the 5th fret) and go back to it
+  in a rest, and bends are pushed by the ring finger, never by the index alone. Checked note by note on
+  a benchmark of 14 passages tabbed by hand (all right).
 - **Melody and accompaniment**: write everything, only the melody on top (a lead line, the melody of
-  a fingerstyle piece) or only the accompaniment under it (*Part* menu).
+  a fingerstyle piece) or only the accompaniment under it (*Part* menu). When a solo with bends takes
+  a breath, the backing's notes stay out of it.
 - **Metronome aware**: a click track in the recording (lessons, home recordings) is found and taken
   out before transcription; its clicks give the exact tempo and beats and its accents the bar lines.
 - **Notation + tablature** with synthesized playback, a cursor, a metronome, slow-down and loops.
@@ -141,8 +143,9 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 - The second voice is written for guitar parts with a held bass; bass, ukulele and strummed parts use
   one voice. Chord names cover triads, sevenths, sus, add9, 6 and power chords, with slash basses.
 - Tempo changes are followed when they are gradual or sustained; rubato and free-time passages are not.
-- *Melody / lead* follows the line on top: while the lead rests, the top notes of the accompaniment
-  can stand in for it, and a solo that goes below the accompaniment is not followed. Two guitars
+- *Melody / lead* follows the line on top: in a fingerstyle melody (no bends or vibrato) the top notes
+  of the accompaniment can stand in for it while it rests, and a solo that goes below the
+  accompaniment is not followed. Two guitars
   playing chords together cannot be told apart.
 - Where a passage can be fingered in several ways with the same notes (an open A minor or the barre at
   the 5th fret), TaBello writes the most common one; only the sound of open strings tells them apart.
@@ -177,7 +180,7 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 5. It detects the **tuning** and **capo** by comparing how playable the part is under each candidate, and
    chooses strings and frets with a Viterbi search over the fretting hand's position (the range of
    index-finger frets the notes allow, narrowing as they come), so shapes stay compact and the hand
-   moves only when it has to (notes played legato stay on one string). Unpicked notes become
+   moves only when it has to, or in a rest (notes played legato stay on one string). Unpicked notes become
    hammer-ons, pull-offs or slides; a short glide up at the end of a note becomes a bend.
 6. It splits a held bass from the melody into two voices, names the **chords** from the harmony of
    each bar (chord tones weighted by how long they ring, the bass note for slash chords), picks a
@@ -297,8 +300,9 @@ e2e/                      Playwright tests of the desktop app
   names follow the bass on the beat (an alternating bass is not an inversion).
 
 - **Fingering is tested like a teacher would check it** (`src/renderer/src/lib/music/fingering.test.ts`):
-  13 passages written as tab (arpeggios, open and barre chords, power chords, pentatonic licks with
-  bends, an open-position melody, a riff, Travis picking) go in as notes, and every note's string and
+  14 passages written as tab (arpeggios, open and barre chords, power chords, pentatonic licks with
+  bends, a lead moving from the 15th fret to the first box, an open-position melody, a riff, Travis
+  picking) go in as notes, and every note's string and
   fret is compared; where teachers would write a passage in more than one way, each is accepted.
   Before the hand-position model, power chords came out 17% right and a pentatonic lick 13%.
 - **Melody and accompaniment** are measured on the sample recordings whose melody is known

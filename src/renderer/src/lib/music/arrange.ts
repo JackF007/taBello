@@ -116,6 +116,10 @@ interface Fingering {
   position: number | null;
   /** A quiet note of the chord left out (most likely an overtone heard as a note). */
   dropped?: number;
+  /** Bent notes: their fret and how far they are bent (semitones). */
+  bends?: { fret: number; semitones: number }[];
+  /** In a lead line, the index finger's fret in the key's first box. */
+  home?: number;
 }
 
 // Written durations, longest first. Triplet values only appear in meters with a triplet feel.
@@ -150,6 +154,10 @@ const FIRST_BOX_PREFERENCE = 0.4;
 const STRETCH_COST = 0.3;
 const SHIFT_COST = 0.6;
 const SHIFT_FRET_COST = 0.25;
+// Per semitone, a bend pushed by the index finger alone (no finger behind it to help).
+const INDEX_BEND_COST = 1;
+// Share of a shift's cost left when the hand moves during a rest.
+const SHIFT_IN_REST = 0.25;
 // A note quieter than this share of the chord's loudest may be left out, at this cost.
 const QUIET_NOTE = 0.8;
 const OPTIONAL_NOTE_COST = 8;
@@ -302,30 +310,37 @@ function chordCandidates(chord: Chord, tuning: number[], frets: number): { candi
  * Chooses one fingering per chord minimizing shape cost plus hand movement between chords,
  * with a Viterbi pass over the whole piece (O(chords × candidates²)).
  */
-function chooseFingerings(candidateLists: Fingering[][], legatoInto: boolean[] = []): { chosen: Fingering[]; cost: number } {
+function chooseFingerings(candidateLists: Fingering[][], legatoInto: boolean[] = [], afterRest: boolean[] = []): { chosen: Fingering[]; cost: number } {
   if (candidateLists.length === 0) return { chosen: [], cost: 0 };
   // The fretting hand sits in a position: the index finger on a fret and one finger per fret above
   // it, four frets in all. Where exactly is open until the notes tell: after a note on the 3rd fret
   // the index can be anywhere from the 1st to the 3rd. So the hand is a range of index frets, which
   // narrows as notes are played. A note that fits costs nothing; one a fret beyond is a stretch; one
   // outside moves the hand the nearest way, which costs a little more the farther it goes. Open
-  // strings leave the hand where it is, and give it time to move: shifts across them cost half.
+  // strings leave the hand where it is, and give it time to move: shifts across them cost half. A
+  // rest gives it all the time it needs: it goes wherever the next phrase lies, staying put if that
+  // is where it is (in a lead line, back in the key's first box).
   type Hand = [number, number] | null;
-  const reach = (from: Hand, to: Fingering, acrossOpen: boolean): { cost: number; hand: Hand } => {
+  const reach = (from: Hand, to: Fingering, acrossOpen: boolean, rest = false): { cost: number; hand: Hand } => {
     const frets = to.notes.filter((n) => n.fret > 0).map((n) => n.fret);
     if (frets.length === 0) return { cost: 0, hand: from };
     const low = Math.min(...frets);
     const high = Math.max(...frets);
     // Index positions that cover these notes (a span beyond four frets: index on the lowest).
     const needed: [number, number] = high - low > 3 ? [low, low] : [Math.max(1, high - 3), low];
-    if (from === null) return { cost: 0, hand: needed };
+    // A bend is pushed by the ring or middle finger with the others behind it: with the index
+    // finger on the bent fret, it is pushed by the index alone.
+    const indexBend = (hand: [number, number]) => (to.bends ?? []).reduce((sum, b) => sum + (hand[0] >= b.fret ? b.semitones * INDEX_BEND_COST : 0), 0);
+    // A lead player's hand rests in the key's first box: index on the tonic's fret.
+    if (to.home !== undefined && (from === null || rest)) from = [to.home, to.home];
+    if (from === null) return { cost: indexBend(needed), hand: needed };
     const overlap: [number, number] = [Math.max(from[0], needed[0]), Math.min(from[1], needed[1])];
-    if (overlap[0] <= overlap[1]) return { cost: high - low > 3 ? STRETCH_COST : 0, hand: overlap };
+    if (overlap[0] <= overlap[1]) return { cost: (high - low > 3 ? STRETCH_COST : 0) + indexBend(overlap), hand: overlap };
     // A fret beyond the hand's reach: stretch rather than move.
     const gap = needed[0] > from[1] ? needed[0] - from[1] : from[0] - needed[1];
-    if (gap === 1) return { cost: STRETCH_COST, hand: from };
-    const cost = (SHIFT_COST + gap * SHIFT_FRET_COST) * (acrossOpen ? 0.5 : 1);
-    return { cost, hand: needed };
+    if (gap === 1 && !rest) return { cost: STRETCH_COST + indexBend(from), hand: from };
+    const cost = (SHIFT_COST + gap * SHIFT_FRET_COST) * (rest ? SHIFT_IN_REST : acrossOpen ? 0.5 : 1);
+    return { cost: cost + indexBend(needed), hand: needed };
   };
 
   const costs: number[][] = [];
@@ -341,7 +356,7 @@ function chooseFingerings(candidateLists: Fingering[][], legatoInto: boolean[] =
     open.push([]);
     candidates.forEach((candidate, j) => {
       if (i === 0) {
-        costs[i][j] = candidate.cost;
+        costs[i][j] = candidate.cost + reach(null, candidate, false).cost;
         back[i][j] = -1;
         hand[i][j] = reach(null, candidate, false).hand;
         open[i][j] = candidate.position === null;
@@ -357,12 +372,12 @@ function chooseFingerings(candidateLists: Fingering[][], legatoInto: boolean[] =
           legatoInto[i] && previous.notes.length === 1 && candidate.notes.length === 1 && previous.notes[0].string !== candidate.notes[0].string
             ? 8
             : 0;
-        const total = costs[i - 1][k] + reach(hand[i - 1][k], candidate, open[i - 1][k]).cost + stringChange;
+        const total = costs[i - 1][k] + reach(hand[i - 1][k], candidate, open[i - 1][k], afterRest[i]).cost + stringChange;
         if (total < best) [best, bestK] = [total, k];
       });
       costs[i][j] = best + candidate.cost;
       back[i][j] = bestK;
-      hand[i][j] = reach(hand[i - 1][bestK], candidate, open[i - 1][bestK]).hand;
+      hand[i][j] = reach(hand[i - 1][bestK], candidate, open[i - 1][bestK], afterRest[i]).hand;
       open[i][j] = candidate.position === null;
     });
   });
@@ -669,11 +684,20 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
       const high = Math.max(0, Math.min(17, Math.max(...c.notes.map((n) => n.fret))) - 12) * HIGH_NECK_COST;
       return {
         ...c,
+        home: boxOf(),
         cost:
           c.cost + c.notes.filter((n) => n.fret === 0).length * OPEN_STRING_IN_LEAD_COST - averageFret * LOW_NECK_PREFERENCE - inBox * FIRST_BOX_PREFERENCE - high,
       };
     });
   });
+  for (const entry of playable)
+    for (const c of entry.candidates) {
+      const bends = c.notes.flatMap((n) => {
+        const semitones = Math.max(0, ...n.sources.map((k) => notes[k].bend ?? 0));
+        return semitones > 0 && n.fret > 0 ? [{ fret: n.fret, semitones }] : [];
+      });
+      if (bends.length > 0) c.bends = bends;
+    }
   const techniques = options.techniques !== false;
   const legatoAttack = legatoThresholds(
     notes,
@@ -696,9 +720,17 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
     const glides = (a.slideOut ?? 0) * direction >= 0.5 || (b.slideIn ?? 0) * direction <= -0.5;
     return glides || (b.attack !== undefined && b.attack < legatoAttack[i]);
   });
+  // A rest before a chord: a beat or more with nothing sounding.
+  let sounding = -Infinity;
+  const afterRest = playable.map(({ chord }) => {
+    const rest = chord.slot - sounding >= meter.slotsPerBeat;
+    sounding = Math.max(sounding, chord.endSlot);
+    return rest;
+  });
   const { chosen, cost } = chooseFingerings(
     playable.map((p) => p.candidates),
     legatoInto,
+    afterRest,
   );
   droppedNotes += chosen.reduce((sum, f) => sum + (f.dropped ?? 0), 0);
   if (techniques) assignTechniques(notes, playable, chosen, legatoAttack);
