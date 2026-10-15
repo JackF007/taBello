@@ -242,5 +242,24 @@ export function mergeBends(notes: NoteEvent[]): NoteEvent[] {
       note.duration = Number((end(back) - note.start).toFixed(4));
     }
   }
+  // A glide up of a semitone or a tone at the end of a note is a bend (a slide off a note goes down,
+  // and further). The bent pitch, when heard as a note of its own arriving from below, is part of it.
+  // (Not when the higher note is then picked: the glide was only the way into it.)
+  const picked = (n: NoteEvent) => (n.attack ?? 0) >= 0.5 || (n.onset ?? 0) >= 0.6;
+  for (const note of sorted) {
+    if (removed.has(note) || note.bend || note.slideOut === undefined) continue;
+    const up = Math.round(note.slideOut);
+    if (note.slideOut < 0.8 || up > 2) continue;
+    const next = sorted.find((n) => !removed.has(n) && n.pitch === note.pitch + up && n.start >= end(note) - 0.05 && n.start <= end(note) + 0.6);
+    if (next && picked(next)) continue;
+    note.bend = up;
+    delete note.slideOut;
+    const arrival = next && next.slideIn !== undefined && next.slideIn <= -0.8 ? next : undefined;
+    if (arrival) {
+      removed.add(arrival);
+      note.duration = Number((end(arrival) - note.start).toFixed(4));
+      if (arrival.vibrato) note.vibrato = true;
+    }
+  }
   return sorted.filter((n) => !removed.has(n));
 }
