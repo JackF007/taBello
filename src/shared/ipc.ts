@@ -103,6 +103,9 @@ export interface SeparationModelStatus {
 
 export const MAX_TRANSPOSE = 12;
 
+export type PartId = 'all' | 'melody' | 'accompaniment';
+export const PART_IDS: readonly PartId[] = ['all', 'melody', 'accompaniment'];
+
 export interface ProjectSettings {
   instrument: InstrumentId;
   /** One of the instrument's tunings; null means "use the detected tuning". */
@@ -121,6 +124,8 @@ export interface ProjectSettings {
   tempoChanges: boolean;
   /** Semitones to move the whole part up or down (to suit a voice, or with a capo: same shapes, higher). */
   transpose: number;
+  /** Which part to write: everything, the melody on top (a lead guitar) or the accompaniment under it. */
+  part: PartId;
 }
 
 export interface ProjectSummary {
@@ -136,6 +141,16 @@ export interface ProjectSummary {
   isolated?: boolean;
 }
 
+/** A metronome heard in the recording: its clicks give the beats, its accents the bars. */
+export interface ClickTrack {
+  /** Times of the clicks (seconds). */
+  clicks: number[];
+  /** The accented clicks (first beats of bars), if the metronome has an accent. */
+  accents: number[];
+  /** Beat period (seconds). */
+  period: number;
+}
+
 export interface Project extends ProjectSummary {
   sourcePath: string;
   /** False when the original audio/video file was moved or deleted. */
@@ -143,6 +158,8 @@ export interface Project extends ProjectSummary {
   notes: NoteEvent[];
   /** True when the notes were edited by hand (the detected ones can be restored). */
   edited: boolean;
+  /** A metronome found in the recording. */
+  metronome?: ClickTrack;
 }
 
 /** Upper bound on the notes a project can hold (a 15-minute recording yields a few thousand). */
