@@ -26,8 +26,14 @@ connection needed: your files never leave your machine.
   notes, into and out of notes) and vibrato, recognized from the pitch contours and the pick attack.
 - **Tempo changes**: when a recording speeds up or slows down, the bar lines follow it and the score
   carries the tempo changes (also in Guitar Pro and MIDI exports).
-- **Playable fingerings**: notes are placed on strings and frets by an optimizer that keeps chord shapes
-  compact and hand movement small.
+- **Fingerings like a guitar teacher's**: the fretting hand sits in a position (one finger per fret) and
+  moves only when it has to; chords use adjacent strings (a G5 is 355, not 3x0), bent and shaken notes
+  are fretted, and lead lines sit in a box (the key's first box: A minor at the 5th fret). Checked
+  note by note on a benchmark of 13 passages tabbed by hand (all right).
+- **Melody and accompaniment**: write everything, only the melody on top (a lead line, the melody of
+  a fingerstyle piece) or only the accompaniment under it (*Part* menu).
+- **Metronome aware**: a click track in the recording (lessons, home recordings) is found and taken
+  out before transcription; its clicks give the exact tempo and beats and its accents the bar lines.
 - **Notation + tablature** with synthesized playback, a cursor, a metronome, slow-down and loops.
   Tab numbers are colored by string.
 - **Play along with the original recording** (audio or video): the score follows it, and you can loop a
@@ -115,7 +121,10 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 - **6/8**: TaBello does not guess compound meters; choose 6/8 and set the tempo in dotted quarters.
 - **Techniques** are detected from how each note starts and how its pitch moves. If you see hammer-ons
   or slides that were not played (e.g. on a heavily compressed or effected recording), turn
-  *Techniques* off. If bar lines drift on a piece played to a click, turn *Tempo changes* off.
+  *Techniques* off.
+- **Played to a click?** Keep the metronome in the recording, with a count-in if you can: TaBello takes
+  the beats and bars from it (*Metronome · 100 BPM* appears on the project page).
+- **A solo over a backing**: choose *Part → Melody / lead* to write the solo alone.
 
 ### Known limitations
 
@@ -132,12 +141,20 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 - The second voice is written for guitar parts with a held bass; bass, ukulele and strummed parts use
   one voice. Chord names cover triads, sevenths, sus, add9, 6 and power chords, with slash basses.
 - Tempo changes are followed when they are gradual or sustained; rubato and free-time passages are not.
+- *Melody / lead* follows the line on top: while the lead rests, the top notes of the accompaniment
+  can stand in for it, and a solo that goes below the accompaniment is not followed. Two guitars
+  playing chords together cannot be told apart.
+- Where a passage can be fingered in several ways with the same notes (an open A minor or the barre at
+  the 5th fret), TaBello writes the most common one; only the sound of open strings tells them apart.
+- In fast strums, light top strings are often not heard, so a chord can come out incomplete.
 - Isolation is limited to recordings of up to 10 minutes. Its model is downloaded separately because
   its weights are for personal and research use only (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
 ## How it works
 
-1. **FFmpeg** extracts the audio track and converts it to 22.05 kHz mono. With *Isolate* on, it decodes
+1. **FFmpeg** extracts the audio track and converts it to 22.05 kHz mono. A metronome, if there is one,
+   is found (a click that repeats identically on a steady beat, learned where it is heard alone) and
+   subtracted, sample-aligned, at every beat. With *Isolate* on, it decodes
    44.1 kHz stereo instead, and **[Demucs](https://github.com/facebookresearch/demucs)** (Hybrid
    Transformer Demucs, run with ONNX Runtime's WebAssembly backend) separates the bass or the "other"
    part (guitars) from vocals and drums first.
@@ -147,15 +164,21 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
    reports for notes that are still ringing (using the model's own onset strength: an echo of a
    ringing string has almost none, a real re-pick a lot), recovers fast notes that the standard length
    filter would drop when they have a clear onset and a steady pitch, and lines up the notes of a chord
-   that the model reports late. From Basic Pitch's pitch contours and the audio's pick
-   clicks it measures how each note was played: attack strength, bends, glides and vibrato.
-4. It estimates the **tempo** (onset periodicity, then a dynamic-programming beat tracker for tempo
-   changes), **key** (Krumhansl–Schmuckler profiles) and **time
+   that the model reports late. Strings picked again while they still ring (a bass repeated under an
+   arpeggio, the strings of a strummed chord) are split into new notes where the onset detector fires
+   and the note comes back up. From Basic Pitch's pitch contours and the audio's pick clicks it
+   measures how each note was played: attack strength, bends, glides and vibrato.
+4. It estimates the **tempo** (onset periodicity, with the beat on the bass and long notes, then a
+   dynamic-programming beat tracker that follows the beats whenever a steady tempo would drift — or
+   the metronome's clicks), **key** (Krumhansl–Schmuckler profiles, settled by the first and last
+   chords and the final cadence) and **time
    signature** (does the off-beat fit a straight or a triplet grid? do accents and bass notes repeat
    every three or four beats?), then quantizes the notes to that grid with bar lines on the downbeats.
 5. It detects the **tuning** and **capo** by comparing how playable the part is under each candidate, and
-   chooses strings and frets with a Viterbi search that balances easy shapes against hand movement
-   (notes played legato stay on one string). Unpicked notes become hammer-ons, pull-offs or slides.
+   chooses strings and frets with a Viterbi search over the fretting hand's position (the range of
+   index-finger frets the notes allow, narrowing as they come), so shapes stay compact and the hand
+   moves only when it has to (notes played legato stay on one string). Unpicked notes become
+   hammer-ons, pull-offs or slides; a short glide up at the end of a note becomes a bend.
 6. It splits a held bass from the melody into two voices, names the **chords** from the harmony of
    each bar (chord tones weighted by how long they ring, the bass note for slash chords), picks a
    standard diagram for each one, and **[alphaTab](https://alphatab.net/)**
@@ -273,6 +296,17 @@ e2e/                      Playwright tests of the desktop app
   again counts as a new note (recall 80% → 95%), a capo never cuts off a clear bass note, and chord
   names follow the bass on the beat (an alternating bass is not an inversion).
 
+- **Fingering is tested like a teacher would check it** (`src/renderer/src/lib/music/fingering.test.ts`):
+  13 passages written as tab (arpeggios, open and barre chords, power chords, pentatonic licks with
+  bends, an open-position melody, a riff, Travis picking) go in as notes, and every note's string and
+  fret is compared; where teachers would write a passage in more than one way, each is accepted.
+  Before the hand-position model, power chords came out 17% right and a pentatonic lick 13%.
+- **Melody and accompaniment** are measured on the sample recordings whose melody is known
+  (`scripts/samples/parts.test.ts`): melody notes found 92–100% (precision) and 86–100% (recall).
+- **Metronome**: a synthetic click track with an accent, under a guitar, must be found on 90% of its
+  beats and its count-in removed (`src/main/transcription/metronome.test.ts`); on a real lesson video
+  the clicks heard alone drop by 21 dB and the tempo comes out at exactly 100 BPM.
+
 ### Measuring accuracy
 
 [GuitarSet](https://guitarset.weebly.com/) (360 annotated guitar recordings, CC BY 4.0) can be used to
@@ -319,6 +353,11 @@ Ideas, roughly by priority — contributions welcome:
 - [ ] Code signing for free through an open-source program (e.g. SignPath Foundation), so Windows
   stops asking for confirmation
 - [ ] Intel Mac builds
+- [x] Fingering benchmark and a hand-position model
+- [x] Melody / accompaniment parts
+- [x] Metronome detection and removal
+- [ ] Use stereo position to tell two guitars apart in studio mixes
+- [ ] Complete strummed chord shapes the model only half hears (optional)
 
 ## Contributing
 
