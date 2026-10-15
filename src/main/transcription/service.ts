@@ -1,7 +1,7 @@
 import { utilityProcess, type UtilityProcess } from 'electron';
 import ffmpegStatic from 'ffmpeg-static';
 import path from 'node:path';
-import type { IpcResult, NoteEvent, Sensitivity, TranscriptionProgress } from '../../shared/ipc';
+import type { ClickTrack, IpcResult, NoteEvent, Sensitivity, TranscriptionProgress } from '../../shared/ipc';
 import type { InstrumentId } from '../../shared/instruments';
 import type { WorkerMessage, WorkerRequest } from './messages';
 
@@ -12,6 +12,7 @@ const WORKER_PATH = path.join(import.meta.dirname, 'transcriptionWorker.js');
 export interface TranscriptionOutput {
   notes: NoteEvent[];
   durationSeconds: number;
+  metronome?: ClickTrack;
 }
 
 let active: { child: UtilityProcess; cancelled: boolean } | null = null;
@@ -63,7 +64,7 @@ export function transcribe(
 
     child.on('message', (message: WorkerMessage) => {
       if (message.type === 'progress') onProgress(message.progress);
-      else if (message.type === 'result') finish({ ok: true, value: { notes: message.notes, durationSeconds: message.durationSeconds } });
+      else if (message.type === 'result') finish({ ok: true, value: { notes: message.notes, durationSeconds: message.durationSeconds, ...(message.metronome ? { metronome: message.metronome } : {}) } });
       else finish({ ok: false, error: { code: message.code, message: message.message } });
     });
 

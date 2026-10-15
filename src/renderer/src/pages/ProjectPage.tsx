@@ -23,7 +23,7 @@ import { applyEdit, findNote, type NoteEdit, type NoteLocation } from '@/lib/mus
 import { toAlphaTex, toMidi } from '@/lib/music/export';
 import { partNotes } from '@/lib/music/parts';
 import { toGuitarPro } from '@/lib/music/guitarPro';
-import { detectTempoChanges } from '@/lib/music/tempo';
+import { clickBarPhase, clickGrid, detectTempoChanges } from '@/lib/music/tempo';
 import { alphaTexPitch, detectKey, detectMeter, estimateTempo, makeKey } from '@/lib/music/theory';
 import { MAX_TRANSPOSE, projectMediaUrl, type PartId, type ExportFormat, type NoteEvent, type Project, type ProjectSettings } from '../../../shared/ipc';
 import { getTuning, INSTRUMENTS, MAX_CAPO, type InstrumentId } from '../../../shared/instruments';
@@ -69,21 +69,33 @@ const ProjectEditor = ({ project }: { project: Project }) => {
 
   // Detection runs on the notes as opened, so hand edits do not shift the tempo or bar lines.
   const detectionNotes = useRef(project.notes).current;
-  const detectedTempo = useMemo(() => estimateTempo(detectionNotes), [detectionNotes]);
+  // A metronome heard in the recording gives the beats exactly (its accents, the bars).
+  const clicks = useMemo(() => (project.metronome ? clickGrid(project.metronome) : null), [project.metronome]);
+  const detectedTempo = useMemo(
+    () => (clicks ? { bpm: clicks.bpm, offset: clicks.beats[0] } : estimateTempo(detectionNotes)),
+    [clicks, detectionNotes],
+  );
   const steadyMeter = useMemo(() => detectMeter(detectionNotes, detectedTempo), [detectionNotes, detectedTempo]);
   const key = useMemo(() => detectKey(detectionNotes), [detectionNotes]);
   const instrument = INSTRUMENTS[settings.instrument];
   const bpm = settings.tempo ?? detectedTempo.bpm;
+  // The metronome's beats, unless a tempo was chosen by hand.
+  const metronomeBeats = clicks && settings.tempo === null ? clicks : null;
   // Tempo changes are tracked around the chosen tempo, so ½× and 2× still apply.
   const tempoChanges = useMemo(
-    () => (settings.tempoChanges && detectionNotes.length > 0 ? detectTempoChanges(detectionNotes, bpm) : null),
-    [settings.tempoChanges, detectionNotes, bpm],
+    () => (settings.tempoChanges && !metronomeBeats && detectionNotes.length > 0 ? detectTempoChanges(detectionNotes, bpm) : null),
+    [settings.tempoChanges, metronomeBeats, detectionNotes, bpm],
   );
-  const beats = tempoChanges?.variable ? tempoChanges.beats : undefined;
-  const detectedMeter = useMemo(
-    () => (beats ? detectMeter(detectionNotes, detectedTempo, beats) : steadyMeter),
-    [beats, detectionNotes, detectedTempo, steadyMeter],
-  );
+  const beats = metronomeBeats ? metronomeBeats.beats : tempoChanges?.variable ? tempoChanges.beats : undefined;
+  const detectedMeter = useMemo(() => {
+    const heard = beats ? detectMeter(detectionNotes, detectedTempo, beats) : steadyMeter;
+    // The metronome's accents tell the bars: how many beats, and where they start.
+    const phase = metronomeBeats && detectionNotes.length > 0 ? clickBarPhase(metronomeBeats, Math.min(...detectionNotes.map((n) => n.start))) : null;
+    if (phase === null || !metronomeBeats || (metronomeBeats.beatsPerBar !== 3 && metronomeBeats.beatsPerBar !== 4)) return heard;
+    const triplets = heard.meter.endsWith('-triplets');
+    const meter: MeterId = metronomeBeats.beatsPerBar === 3 ? (triplets ? '3/4-triplets' : '3/4') : triplets ? '4/4-triplets' : '4/4';
+    return { ...heard, meter, barPhase: phase };
+  }, [beats, metronomeBeats, detectionNotes, detectedTempo, steadyMeter]);
   const meterId: MeterId = settings.meter ?? detectedMeter.meter;
   const meter = METERS[meterId];
   const timing = useMemo(() => {
@@ -454,6 +466,16 @@ const ProjectEditor = ({ project }: { project: Project }) => {
         >
           Tempo changes
         </Toggle>
+
+        {metronomeBeats && (
+          <span
+            className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm text-muted-foreground"
+            title="A metronome was heard in the recording: its clicks give the beats and its accents the bars (it is left out of the transcription)"
+            data-testid="metronome"
+          >
+            Metronome · {metronomeBeats.bpm} BPM
+          </span>
+        )}
 
         {capo > 0 && (
           <span

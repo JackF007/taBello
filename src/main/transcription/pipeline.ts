@@ -7,8 +7,9 @@ import { BasicPitch, noteFramesToTime, outputToNotesPoly } from '@spotify/basic-
 import * as tf from '@tensorflow/tfjs-core';
 import { loadGraphModel } from '@tensorflow/tfjs-converter';
 import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
-import type { ErrorCode, NoteEvent, Sensitivity } from '../../shared/ipc';
+import type { ClickTrack, ErrorCode, NoteEvent, Sensitivity } from '../../shared/ipc';
 import { MAX_DURATION_SECONDS } from '../../shared/ipc';
+import { removeMetronome } from './metronome';
 import { analyzeArticulation, mergeBends, packContour, pitchDeviation, transientEnvelope } from './articulation';
 
 /** Basic Pitch expects mono audio at this rate. */
@@ -180,6 +181,8 @@ export interface DetectNotesOptions {
   maxHz: number;
   sensitivity?: Sensitivity;
   onProgress?: (fraction: number) => void;
+  /** Called with the metronome, when the recording has one (its clicks are taken out). */
+  onMetronome?: (metronome: ClickTrack) => void;
 }
 
 /**
@@ -291,8 +294,11 @@ export function removeHarmonics(notes: NoteEvent[]): NoteEvent[] {
 }
 
 /** Runs polyphonic pitch detection on mono 22.05 kHz audio. */
-export async function detectNotes(audio: Float32Array, options: DetectNotesOptions): Promise<NoteEvent[]> {
+export async function detectNotes(recording: Float32Array, options: DetectNotesOptions): Promise<NoteEvent[]> {
   await initTensorFlow(options.assets.wasmDir);
+  // A metronome's clicks are taken out first: the guitar alone is analysed.
+  const { audio, metronome } = removeMetronome(recording, SAMPLE_RATE);
+  if (metronome) options.onMetronome?.({ clicks: metronome.clicks, accents: metronome.accents, period: metronome.period });
   // Basic Pitch is typed against the umbrella `@tensorflow/tfjs` package; the GraphModel is the same class.
   const basicPitch = new BasicPitch(loadModel(options.assets.modelDir) as unknown as ConstructorParameters<typeof BasicPitch>[0]);
   const frames: number[][] = [];
@@ -403,6 +409,9 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
   const round = (value: number, digits: number) => Number(value.toFixed(digits));
   const context = { onsets, contours, transients: transientEnvelope(audio) };
   const repicked = new Set<NoteEvent>();
+  // A click left in (an accent never heard alone) sounds like a pick: notes starting on it have no
+  // attack to tell.
+  const onClick = (time: number) => (metronome?.remaining ?? []).some((c) => Math.abs(c - time) < 0.02);
   const notes = noteFramesToTime(events)
     .map((note, i) => {
       const event: NoteEvent = {
@@ -413,6 +422,7 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
         ...analyzeArticulation(events[i], note.startTimeSeconds, context),
       };
       if (repicks.has(events[i])) repicked.add(event);
+      if (onClick(event.start)) delete event.attack;
       return event;
     })
     .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
