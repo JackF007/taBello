@@ -16,7 +16,8 @@ const MINIMUMS: Record<string, { precision: number; recall: number; durations: n
   entertainer: { precision: 0.9, recall: 0.95, durations: 0.85, barLines: true },
   'amazing-grace': { precision: 0.9, recall: 0.95, durations: 0.95, barLines: true },
   'funk-bass': { precision: 0.7, recall: 0.6, durations: 0.5, barLines: false },
-  strumming: { precision: 0.95, recall: 0.9, durations: 0.95, barLines: true },
+  // Strings struck again while ringing are recovered from the strum (recall 95% → 96–97%).
+  strumming: { precision: 0.95, recall: 0.95, durations: 0.95, barLines: true },
 };
 
 describe('complex pieces', () => {
