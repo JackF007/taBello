@@ -6,6 +6,11 @@ import type { NoteEvent, PartId } from '../../../../shared/ipc';
 
 /** Notes starting within this time of each other are struck together. */
 const TOGETHER = 0.04;
+/**
+ * Seconds a listener keeps the melody in mind through a pause: a note after it must follow on from
+ * the melody (no leap down into the accompaniment just because the lead takes a breath).
+ */
+const MELODY_MEMORY = 2;
 /** Seconds either side that set the register of the music around a note. */
 const REGISTER_WINDOW = 3;
 
@@ -65,14 +70,14 @@ export function melodyNotes(notes: NoteEvent[]): boolean[] {
   for (let r = 0; r < order.length; r++) {
     const t = notes[order[r]].start;
     // Notes that ended (started) long enough before: the best of them is a fresh start.
-    while (restart.upTo + 1 < r && notes[order[restart.upTo + 1]].start < t - 2) {
+    while (restart.upTo + 1 < r && notes[order[restart.upTo + 1]].start < t - MELODY_MEMORY) {
       restart.upTo++;
       const candidate = prefix[restart.upTo];
       if (candidate.value > restart.value) restart = { ...restart, value: candidate.value, index: candidate.index };
     }
     let value = restart.value;
     let link = restart.index;
-    for (let q = r - 1; q >= 0 && notes[order[q]].start >= t - 2; q--) {
+    for (let q = r - 1; q >= 0 && notes[order[q]].start >= t - MELODY_MEMORY; q--) {
       if (notes[order[q]].start > t - TOGETHER || best[q] === -Infinity) continue;
       const v = best[q] - leap(order[q], order[r]);
       if (v > value) [value, link] = [v, q];
