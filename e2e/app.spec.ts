@@ -197,6 +197,14 @@ test('transcribes a bundled sample', async () => {
   await expect(page.getByRole('radio', { name: 'Original' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Reset' }).click();
   await expect(page.getByTestId('transpose')).toHaveText('0');
+
+  // The melody alone: the tab is written again without the bass.
+  await page.locator('#part').click();
+  await page.getByRole('option', { name: 'Melody / lead' }).click();
+  await expect(page.locator('#part')).toContainText('Melody / lead');
+  await expect(page.locator('.at-surface')).toBeVisible();
+  await page.locator('#part').click();
+  await page.getByRole('option', { name: 'Everything' }).click();
 });
 
 test('isolates the bass of the band sample', async () => {
