@@ -121,6 +121,18 @@ export const PASSAGES: Passage[] = [
     minimum: 1,
   },
   {
+    // Bends are pushed by the ring finger: A bent up to B is played on the B string's 10th fret, not on
+    // the top string's 5th (the index finger's fret in the box). A beat of rest after the high bends
+    // lets the hand come back down to the box; after the bends at the 10th fret the line may stay in
+    // the second box (7th to 10th fret) for a note or two.
+    name: 'A minor lead: bends high on the neck, then in the box',
+    steps: [
+      ['1:15b', 2], ['1:15b', 2], ['1:17v', 4], ['', 8],
+      ['2:8b'], ['2:8b'], ['2:10b'], ['2:10b'], ['1:8'], ['1:5|2:10'], ['2:8'], ['2:5|3:9'], ['3:7'], ['4:7v', 3],
+    ],
+    minimum: 1,
+  },
+  {
     name: 'melody in the open position (Ode to Joy)',
     steps: bars('1:0', '1:0', '1:1', '1:3', '1:3', '1:1', '1:0', '2:3', '2:1', '2:1', '2:3', '1:0', '1:0', '2:3', '2:3', '2:3'),
     minimum: 1,
