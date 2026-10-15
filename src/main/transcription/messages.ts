@@ -1,4 +1,4 @@
-import type { ErrorCode, NoteEvent, Sensitivity, TranscriptionProgress } from '../../shared/ipc';
+import type { ClickTrack, ErrorCode, NoteEvent, Sensitivity, TranscriptionProgress } from '../../shared/ipc';
 import type { InstrumentId } from '../../shared/instruments';
 import type { DemucsSource } from '../separation/demucs';
 
@@ -15,5 +15,5 @@ export interface WorkerRequest {
 /** Transcription worker → main. */
 export type WorkerMessage =
   | { type: 'progress'; progress: TranscriptionProgress }
-  | { type: 'result'; notes: NoteEvent[]; durationSeconds: number }
+  | { type: 'result'; notes: NoteEvent[]; durationSeconds: number; metronome?: ClickTrack }
   | { type: 'error'; code: ErrorCode; message: string };
