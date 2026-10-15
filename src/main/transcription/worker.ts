@@ -2,7 +2,7 @@
 // so the heavy decoding and inference never block the main process, and cancelling is a kill.
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
-import { MAX_SEPARATION_SECONDS } from '../../shared/ipc';
+import { MAX_SEPARATION_SECONDS, type ClickTrack } from '../../shared/ipc';
 import { INSTRUMENTS } from '../../shared/instruments';
 import { DEMUCS_SAMPLE_RATE, halveSampleRate, separateSource } from '../separation/demucs';
 import type { WorkerMessage, WorkerRequest } from './messages';
@@ -52,15 +52,17 @@ process.parentPort.once('message', async ({ data }: { data: WorkerRequest }) => 
 
     const { minHz, maxHz } = INSTRUMENTS[data.instrument];
     progress('transcribing')(0);
+    let metronome: ClickTrack | undefined;
     const notes = await detectNotes(audio, {
       assets: { wasmDir: path.join(ASSETS_DIR, 'wasm'), modelDir: path.join(ASSETS_DIR, 'model') },
       minHz,
       maxHz,
       sensitivity: data.sensitivity,
       onProgress: progress('transcribing'),
+      onMetronome: (found) => (metronome = found),
     });
 
-    post({ type: 'result', notes, durationSeconds: audio.length / SAMPLE_RATE });
+    post({ type: 'result', notes, durationSeconds: audio.length / SAMPLE_RATE, ...(metronome ? { metronome } : {}) });
   } catch (error) {
     if (error instanceof PipelineError) {
       post({ type: 'error', code: error.code, message: error.message });

@@ -4,7 +4,7 @@ import { app } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { MAX_NOTES, MAX_TRANSPOSE, PART_IDS, type PartId, type NoteEvent, type Project, type ProjectSettings, type ProjectSummary } from '../shared/ipc';
+import { MAX_NOTES, MAX_TRANSPOSE, PART_IDS, type ClickTrack, type PartId, type NoteEvent, type Project, type ProjectSettings, type ProjectSummary } from '../shared/ipc';
 import { INSTRUMENTS, isInstrumentId, MAX_CAPO, type InstrumentId } from '../shared/instruments';
 import { isMeterId } from '../shared/meters';
 
@@ -14,6 +14,16 @@ interface StoredMeta extends ProjectSummary {
 }
 
 const ID_PATTERN = /^[a-f0-9]{32}$/;
+/** A metronome heard in the recording (its clicks: the beats). */
+const METRONOME = 'metronome.json';
+
+const isTimes = (value: unknown): value is number[] => Array.isArray(value) && value.every((t) => typeof t === 'number' && Number.isFinite(t) && t >= 0);
+function isClickTrack(value: unknown): value is ClickTrack {
+  if (typeof value !== 'object' || value === null) return false;
+  const { clicks, accents, period } = value as Record<string, unknown>;
+  return isTimes(clicks) && isTimes(accents) && typeof period === 'number' && period > 0.15 && period < 3;
+}
+
 /** The notes as transcribed, kept once the user edits notes.json. */
 const ORIGINAL_NOTES = 'notes.original.json';
 
@@ -124,6 +134,7 @@ export async function createProject(input: {
   /** Defaults to the file name. */
   title?: string;
   isolated?: boolean;
+  metronome?: ClickTrack;
 }): Promise<ProjectSummary> {
   const id = randomUUID().replaceAll('-', '');
   const dir = path.join(projectsDir(), id);
@@ -145,6 +156,7 @@ export async function createProject(input: {
     ...(input.isolated ? { isolated: true } : {}),
   };
   await writeJsonAtomic(path.join(dir, 'notes.json'), input.notes);
+  if (input.metronome) await writeJsonAtomic(path.join(dir, METRONOME), input.metronome);
   await writeJsonAtomic(path.join(dir, 'meta.json'), meta);
   return toSummary(meta);
 }
@@ -170,7 +182,8 @@ export async function getProject(id: string): Promise<Project | null> {
   const notes = JSON.parse(await readFile(path.join(dir, 'notes.json'), 'utf8')) as NoteEvent[];
   const exists = (file: string) => access(file).then(() => true, () => false);
   const [sourceAvailable, edited] = await Promise.all([exists(meta.sourcePath), exists(path.join(dir, ORIGINAL_NOTES))]);
-  return { ...toSummary(meta), sourcePath: meta.sourcePath, sourceAvailable, notes, edited };
+  const metronome = await readFile(path.join(dir, METRONOME), 'utf8').then((text) => JSON.parse(text) as unknown, () => null);
+  return { ...toSummary(meta), sourcePath: meta.sourcePath, sourceAvailable, notes, edited, ...(isClickTrack(metronome) ? { metronome } : {}) };
 }
 
 export async function getProjectSourcePath(id: string): Promise<string | null> {

@@ -189,3 +189,55 @@ export function detectTempoChanges(notes: NoteEvent[], bpm: number): TempoChange
   });
   return { variable: true, beats, range };
 }
+
+export interface ClickGrid {
+  /** Every beat, the clicks and the beats between them (a click under a loud strum may be missed). */
+  beats: number[];
+  bpm: number;
+  /** Beats per bar from the accented clicks, when the metronome has an accent. */
+  beatsPerBar: number | null;
+  /** Indices in `beats` of the accented beats (first beats of bars). */
+  downbeats: number[];
+}
+
+/** The beats a metronome gives: its clicks, with any beat it was not found on filled in. */
+export function clickGrid(track: { clicks: number[]; accents: number[]; period: number }): ClickGrid {
+  const clicks = [...track.clicks].sort((a, b) => a - b);
+  const beats: number[] = [];
+  clicks.forEach((t, i) => {
+    if (i > 0) {
+      const gap = t - clicks[i - 1];
+      const missing = Math.round(gap / track.period) - 1;
+      for (let k = 1; k <= missing; k++) beats.push(clicks[i - 1] + (k * gap) / (missing + 1));
+    }
+    beats.push(t);
+  });
+  const accented = track.accents.map((a) => beats.findIndex((b) => Math.abs(b - a) < 0.02)).filter((i) => i >= 0);
+  // Beats per bar: the most common distance between accents (2 to 6 beats).
+  const counts = new Map<number, number>();
+  accented.slice(1).forEach((d, i) => {
+    const spacing = d - accented[i];
+    if (spacing >= 2 && spacing <= 6) counts.set(spacing, (counts.get(spacing) ?? 0) + 1);
+  });
+  const [beatsPerBar, count] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
+  // Downbeats: accents a whole number of bars apart (any other is a click taken for an accent).
+  const downbeats =
+    beatsPerBar === null ? [] : accented.filter((d, i) => accented.some((e, j) => j !== i && Math.abs(e - d) % beatsPerBar === 0 && e !== d));
+  return {
+    beats,
+    bpm: Math.round(600 / track.period) / 10,
+    beatsPerBar: beatsPerBar !== null && count >= 3 ? beatsPerBar : null,
+    downbeats,
+  };
+}
+
+/**
+ * Where the bars start with a metronome's accents: which beat (0-based from the beat at or before
+ * the first note) is a downbeat, as detectMeter reports it. Null without accents.
+ */
+export function clickBarPhase(grid: ClickGrid, firstNoteStart: number): number | null {
+  if (!grid.beatsPerBar || grid.downbeats.length === 0 || grid.beats.length < 2) return null;
+  const anchor = anchorBeat(beatGrid(grid.beats), firstNoteStart);
+  const downbeat = grid.downbeats.reduce((best, d) => (Math.abs(d - anchor) < Math.abs(best - anchor) ? d : best));
+  return (((downbeat - anchor) % grid.beatsPerBar) + grid.beatsPerBar) % grid.beatsPerBar;
+}
