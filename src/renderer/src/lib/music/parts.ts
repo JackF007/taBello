@@ -13,6 +13,12 @@ const TOGETHER = 0.04;
 const MELODY_MEMORY = 2;
 /** Seconds either side that set the register of the music around a note. */
 const REGISTER_WINDOW = 3;
+/** Seconds either side in which a lead's bends and vibrato set its register. */
+const LEAD_WINDOW = 12;
+/** Semitones below its lowest bent or shaken note that a lead still reaches. */
+const LEAD_RANGE = 3;
+/** Seconds between the notes of a run. */
+const RUN_GAP = 0.4;
 
 /**
  * For each note, whether it belongs to the melody. The melody is the best monophonic path through
@@ -57,6 +63,33 @@ export function melodyNotes(notes: NoteEvent[]): boolean[] {
     return (top ? 1 : -2) + (lowest ? -2 : 0) + (inChord ? -1.5 : 0) + height + louder + expressive - 0.3;
   });
 
+  const first = bestPath(notes, order, score);
+  // A lead line over its backing: when it takes a breath, the backing's top notes are not the melody.
+  // The lead's register is set by its bent and shaken notes; a note well below it, not reached in a
+  // run from the lead, belongs to the backing.
+  const lead = order.map((i, r) => {
+    const note = notes[i];
+    const near = order.slice(at(note.start - LEAD_WINDOW), at(note.start + LEAD_WINDOW + 1e-9)).filter((k) => first[k] && (notes[k].bend || notes[k].vibrato));
+    if (near.length < 2) return 0;
+    const floor = Math.min(...near.map((k) => notes[k].pitch)) - LEAD_RANGE;
+    if (note.pitch >= floor) return 0;
+    // Reached in a run from the lead (or leading into it): part of the line, one note after another
+    // (a note struck while the lead's still sounds is under it).
+    const run = order
+      .slice(at(note.start - RUN_GAP), at(note.start + RUN_GAP + 1e-9))
+      .some((k) => {
+        const other = notes[k];
+        if (!first[k] || k === i || other.pitch < floor || Math.abs(other.pitch - note.pitch) > 5) return false;
+        return other.start < note.start ? other.start + other.duration <= note.start + TOGETHER : other.start >= note.start + note.duration - TOGETHER;
+      });
+    return run ? 0 : -score[r] - 1;
+  });
+  if (!lead.some((v) => v !== 0)) return first;
+  return bestPath(notes, order, score.map((v, r) => v + lead[r]));
+}
+
+/** The best monophonic path through the notes (in `order`), given each one's score. */
+function bestPath(notes: NoteEvent[], order: number[], score: number[]): boolean[] {
   // Best path ending at each note: its score plus the best path before it, minus the leap. A path
   // can also start afresh after a pause (best of everything that ended well before).
   const best = new Array<number>(order.length).fill(-Infinity);
