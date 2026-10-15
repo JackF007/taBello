@@ -56,13 +56,36 @@ export function makeKey(tonic: number, mode: 'major' | 'minor'): Key {
 export function detectKey(notes: NoteEvent[]): Key {
   const histogram = new Array<number>(12).fill(0);
   for (const note of notes) histogram[note.pitch % 12] += note.duration * note.velocity;
+  // A piece usually starts and ends on its tonic chord: its bass names the tonic and its third the
+  // mode. That settles keys that share most of their notes (A minor and D major or A major, when an
+  // F# chord rings long in the middle), as a listener hears the first and last chords.
+  const chordNear = (from: number, to: number) => {
+    const inside = notes.filter((n) => n.start >= from && n.start <= to);
+    if (inside.length === 0) return null;
+    const bass = Math.min(...inside.map((n) => n.pitch)) % 12;
+    const classes = new Set(inside.map((n) => (n.pitch - bass + 12) % 12));
+    return { bass, minor: classes.has(3) && !classes.has(4), major: classes.has(4) && !classes.has(3) };
+  };
+  const first = notes.length ? Math.min(...notes.map((n) => n.start)) : 0;
+  const last = notes.length ? Math.max(...notes.map((n) => n.start)) : 0;
+  const ends = [chordNear(first, first + 1.5), chordNear(last - 2, last)];
+  // The cadence: the bass before the final chord a fifth above it (E → A, dominant → tonic).
+  const ending = ends[1];
+  const lastBasses = notes.filter((n) => n.start >= last - 6 && n.start < last - 0.1 && ending && n.pitch % 12 !== ending.bass).sort((a, b) => a.start - b.start);
+  const lowest = lastBasses.length ? Math.min(...lastBasses.map((n) => n.pitch)) : null;
+  const approach = lowest === null ? null : lastBasses.filter((n) => n.pitch <= lowest + 7).at(-1)!.pitch % 12;
+  const cadence = ending !== null && approach === (ending.bass + 7) % 12;
+  const tonicBonus = (tonic: number, mode: 'major' | 'minor') =>
+    ends.reduce((sum, chord) => sum + (chord && chord.bass === tonic && !(mode === 'major' ? chord.minor : chord.major) ? 0.15 : 0), 0) +
+    (cadence && ending.bass === tonic && !(mode === 'major' ? ending.minor : ending.major) ? 0.15 : 0);
 
   let best = makeKey(0, 'major');
   let bestScore = -Infinity;
   for (let tonic = 0; tonic < 12; tonic++) {
     const rotated = histogram.map((_, i) => histogram[(i + tonic) % 12]);
     for (const mode of ['major', 'minor'] as const) {
-      const score = correlation(rotated, mode === 'major' ? MAJOR_PROFILE : MINOR_PROFILE);
+      const score =
+        correlation(rotated, mode === 'major' ? MAJOR_PROFILE : MINOR_PROFILE) + tonicBonus(tonic, mode);
       if (score > bestScore) {
         bestScore = score;
         best = makeKey(tonic, mode);
@@ -99,6 +122,22 @@ function mergeOnsets(notes: NoteEvent[]): Onset[] {
     } else onsets.push({ time: note.start, weight: note.velocity, notes: [note] });
   }
   return onsets;
+}
+
+/**
+ * Onsets weighted as accents: a note in the low register (a bass note) and a long note (one that
+ * rings for a beat or more) are heard as stronger than a short note in the middle of an arpeggio.
+ */
+function accented(onsets: Onset[], period: number): Onset[] {
+  const basses = onsets.map((o) => Math.min(...o.notes.map((n) => n.pitch))).sort((a, b) => a - b);
+  const lowRegister = Math.min(basses[Math.floor(basses.length * 0.2)], basses[Math.floor(basses.length / 2)] - 1);
+  // Only a bass under other parts, not a bass line played alone.
+  const layered = basses.filter((b) => b >= lowRegister + 12).length >= basses.length * 0.3 || onsets.some((o) => o.notes.length > 1);
+  return onsets.map((onset) => {
+    const bass = layered && Math.min(...onset.notes.map((n) => n.pitch)) <= lowRegister ? 1 : 0;
+    const length = Math.min(1, Math.max(...onset.notes.map((n) => n.duration)) / (2 * period));
+    return { ...onset, weight: onset.weight * (1 + bass + length) };
+  });
 }
 
 /** How consistently onsets fall on a grid of this period (0..1), and the grid's phase. */
@@ -198,7 +237,9 @@ export function estimateTempo(notes: NoteEvent[]): TempoEstimate {
 
   const bpm = Math.round(bestBpm * 10) / 10;
   const period = 60 / bpm;
-  const phase = alignment(beatOnsets, period).phase;
+  // Where the beats fall: in an even stream of 8ths, beats and off-beats are alike in loudness;
+  // a listener puts the beat on the bass notes and on the notes that ring longest.
+  const phase = alignment(accented(beatOnsets, period), period).phase;
   const offset = ((((phase / (2 * Math.PI)) * period) % period) + period) % period;
   return { bpm, offset };
 }

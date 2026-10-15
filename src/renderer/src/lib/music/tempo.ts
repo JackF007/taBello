@@ -48,6 +48,34 @@ export function anchorBeat(grid: TimeGrid, firstStart: number): number {
 const FPS = 100;
 
 /**
+ * How strongly each note marks a beat, as a listener hears it: louder, picked notes more, and above
+ * all a note in the low register (a bass note) or a long note (one that rings for a beat or more),
+ * which in an even stream of 8ths tell the beats from the off-beats.
+ */
+export function noteAccents(notes: NoteEvent[], period: number): number[] {
+  const sorted = notes.map((n) => n.pitch).sort((a, b) => a - b);
+  const lowRegister = Math.min(sorted[Math.floor(sorted.length * 0.2)] ?? 0, (sorted[Math.floor(sorted.length / 2)] ?? 0) - 1);
+  // Notes in start order, to find the notes struck with each one.
+  const order = notes.map((_, i) => i).sort((a, b) => notes[a].start - notes[b].start);
+  const lowest = new Array<boolean>(notes.length).fill(true);
+  for (let a = 0; a < order.length; a++) {
+    for (let b = a + 1; b < order.length && notes[order[b]].start - notes[order[a]].start < 0.03; b++) {
+      const [i, j] = [order[a], order[b]];
+      if (notes[i].pitch < notes[j].pitch) lowest[j] = false;
+      else if (notes[j].pitch < notes[i].pitch) lowest[i] = false;
+    }
+  }
+  // A bass under other parts (fingerstyle, a guitar with a bass line): not a bass line played alone.
+  const layered = notes.filter((n) => n.pitch >= lowRegister + 12).length >= notes.length * 0.3;
+  return notes.map((note, i) => {
+    // The thumb plays the beat: the bass weighs more than anything else.
+    const bass = layered && lowest[i] && note.pitch <= lowRegister ? 2 : 0;
+    const length = Math.min(1, note.duration / (2 * period));
+    return 1 + bass + length;
+  });
+}
+
+/**
  * Dynamic-programming beat tracker (D. Ellis, "Beat Tracking by Dynamic Programming", 2007): beats
  * fall on strong onsets while successive intervals stay close to the expected period, so the
  * tracker can follow a tempo that drifts or changes. Returns beat times in seconds.
@@ -57,10 +85,13 @@ export function trackBeats(notes: NoteEvent[], bpm: number): number[] {
   const end = Math.max(...notes.map((n) => n.start + n.duration)) + 1;
   const length = Math.ceil(end * FPS);
   const envelope = new Float64Array(length);
-  // Onset strength: each note's loudness (picked notes count more than legato ones), spread ±20 ms.
-  for (const note of notes) {
+  // Onset strength: each note's loudness (picked notes count more than legato ones) and accent
+  // (bass and long notes), spread ±20 ms.
+  const accents = noteAccents(notes, 60 / bpm);
+  for (const [i, note] of notes.entries()) {
     const frame = Math.round(note.start * FPS);
-    const weight = note.velocity * (note.attack === undefined ? 1 : 0.4 + 0.6 * note.attack);
+    // The pick click counts a little (a soft thumb on the bass has hardly any).
+    const weight = note.velocity * (note.attack === undefined ? 1 : 0.7 + 0.3 * note.attack) * accents[i];
     for (let d = -2; d <= 2; d++) if (frame + d >= 0 && frame + d < length) envelope[frame + d] += weight * Math.exp(-(d * d) / 2);
   }
   const mean = envelope.reduce((s, v) => s + v, 0) / length;
@@ -136,7 +167,18 @@ export function detectTempoChanges(notes: NoteEvent[], bpm: number): TempoChange
   const low = sorted[Math.floor(sorted.length * 0.1)];
   const high = sorted[Math.floor(sorted.length * 0.9)];
   const range: [number, number] = [Math.round(low), Math.round(high)];
-  if (high / low < 1.06) return { ...steady, range };
+  // A constant tempo must also stay with the beats over the whole piece: a drift too small to call a
+  // tempo change (a tenth of a BPM) still adds up to half a beat over six minutes. The straight line
+  // through the tracked beats is the best constant grid; if it strays from them by more than a
+  // 16th note (a quarter of a beat), the beats are followed.
+  const n = raw.length;
+  const meanIndex = (n - 1) / 2;
+  const meanTime = raw.reduce((sum, t) => sum + t, 0) / n;
+  const slope = raw.reduce((sum, t, i) => sum + (i - meanIndex) * (t - meanTime), 0) / raw.reduce((sum, _, i) => sum + (i - meanIndex) ** 2, 0);
+  const residuals = raw.map((t, i) => t - (meanTime + slope * (i - meanIndex)));
+  // Smoothed over 16 beats: a drift is slow and steady, unlike a few misplaced beats.
+  const drift = Math.max(...residuals.map((_, i) => Math.abs(median(residuals.slice(Math.max(0, i - 8), i + 8)))));
+  if (high / low < 1.06 && drift < slope / 4) return { ...steady, range };
 
   // Rebuild the beats from the smoothed intervals, pulled halfway back to the tracked beats so
   // that rounding does not accumulate.

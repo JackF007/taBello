@@ -28,6 +28,15 @@ const MIN_NOTE_FRAMES = 11;
 // or slide leaves between two pitches have no onset of their own.
 const FAST_NOTE_FRAMES = 6;
 const FAST_NOTE_ONSET = 0.5;
+// A ringing note picked again: the onset detector's peak and how much the note's activation rises.
+const REPICK_ONSET = 0.65;
+const REPICK_RISE = 0.2;
+// Strums: a string struck again (onset of the hit), how strongly the other strings of the shape show
+// it, and the spread of one strum across the strings (frames, about 60 ms).
+const STRUM_HIT_ONSET = 0.6;
+const STRUM_RESTRIKE_ONSET = 0.45;
+const STRUM_FRAMES = 5;
+const STRUM_RESTRIKE_RISE = 0.05;
 
 export class PipelineError extends Error {
   constructor(
@@ -178,7 +187,7 @@ export interface DetectNotesOptions {
  * often reports a fresh onset for notes that are still ringing; those phantom onsets start exactly
  * where the previous same-pitch note ends and are clearly weaker, whereas a real re-pick is about as loud.
  */
-export function mergeRetriggeredNotes(notes: NoteEvent[]): NoteEvent[] {
+export function mergeRetriggeredNotes(notes: NoteEvent[], repicks: Set<NoteEvent> = new Set()): NoteEvent[] {
   const merged: NoteEvent[] = [];
   const lastByPitch = new Map<number, NoteEvent>();
   for (const note of [...notes].sort((a, b) => a.start - b.start)) {
@@ -198,8 +207,8 @@ export function mergeRetriggeredNotes(notes: NoteEvent[]): NoteEvent[] {
     const echo = previous !== undefined && note.onset !== undefined && note.onset < 0.4 && gap > -0.05 && gap < 0.6;
     // A string picked again (a strum hitting it once more), even a little softer: the onset detector
     // fires clearly and the pick is heard.
-    const repicked = note.onset !== undefined && note.onset >= 0.85 && (note.attack ?? 0) >= 0.5;
-    if (previous && ((contiguous && weaker && !repicked) || echo)) {
+    const repicked = repicks.has(note) || (note.onset !== undefined && note.onset >= 0.85 && (note.attack ?? 0) >= 0.5);
+    if (previous && ((contiguous && weaker && !repicked) || (echo && !repicks.has(note)))) {
       previous.duration = Number((note.start + note.duration - previous.start).toFixed(4));
       continue;
     }
@@ -269,7 +278,14 @@ export function removeHarmonics(notes: NoteEvent[]): NoteEvent[] {
           base !== note &&
           Math.abs(base.start - note.start) < 0.05 &&
           HARMONIC_INTERVALS.has(note.pitch - base.pitch) &&
-          note.velocity < base.velocity * 0.6,
+          // Much quieter; or, on a bright string (an acoustic guitar), a little quieter, dying away
+          // long before the note it belongs to and sounding with nothing else (a bass picked alone by
+          // the thumb, the fingers coming in after) — an octave played on purpose, or within a
+          // chord, rings like the rest.
+          (note.velocity < base.velocity * 0.6 ||
+            (note.velocity < base.velocity * 0.8 &&
+              note.duration < base.duration * 0.6 &&
+              !notes.some((other) => other !== note && other !== base && Math.abs(other.start - base.start) < 0.05))),
       ),
   );
 }
@@ -313,16 +329,93 @@ export async function detectNotes(audio: Float32Array, options: DetectNotesOptio
     if (onsetStrength(fast) < FAST_NOTE_ONSET || !steady(fast)) continue;
     if (!events.some((e) => overlaps(e, fast))) events.push(fast);
   }
+  // A string picked again while it still rings (a bass note repeated under an arpeggio): the onset
+  // detector fires and the note's activation, which had decayed, comes back up. Other strings'
+  // attacks also stir the onset detector, more weakly, and without bringing the ringing note back
+  // up. Basic Pitch sometimes keeps one long note (it is split here) and sometimes splits it itself;
+  // either way the second note is a real pick, not an echo for mergeRetriggeredNotes to undo.
+  const repickAt = (pitch: number, f: number) => {
+    const strength = onsets[f]?.[pitch] ?? 0;
+    if (strength < REPICK_ONSET) return false;
+    for (let d = -3; d <= 3; d++) if ((onsets[f + d]?.[pitch] ?? 0) > strength) return false;
+    const before = Math.min(...frames.slice(Math.max(0, f - 4), f + 1).map((row) => row[pitch]));
+    const after = Math.max(...frames.slice(f, f + 9).map((row) => row[pitch]));
+    return after - before >= REPICK_RISE;
+  };
+  const repicks = new Set<(typeof events)[number]>();
+  for (const event of events) {
+    const pitch = event.pitchMidi - 21;
+    const continues = events.some((e) => e !== event && e.pitchMidi === event.pitchMidi && Math.abs(e.startFrame + e.durationFrames - event.startFrame) <= 3);
+    if (!continues) continue;
+    for (let f = event.startFrame - 3; f <= event.startFrame + 3; f++) if (repickAt(pitch, f)) repicks.add(event);
+  }
+  // (The pieces split off are scanned too: a bass can be picked several times while it rings.)
+  for (let k = 0; k < events.length; k++) {
+    const event = events[k];
+    const pitch = event.pitchMidi - 21;
+    const end = event.startFrame + event.durationFrames;
+    for (let f = event.startFrame + MIN_NOTE_FRAMES; f < end - MIN_NOTE_FRAMES; f++) {
+      if (!repickAt(pitch, f)) continue;
+      const repick = { ...event, startFrame: f, durationFrames: end - f };
+      events.push(repick);
+      repicks.add(repick);
+      event.durationFrames = f - event.startFrame;
+      break;
+    }
+  }
+  // Strumming: the fretting hand holds a shape and the picking hand strikes its strings again and
+  // again. Strings still ringing are struck once more, but their activation hardly changes, so only
+  // the strings that had stopped (often the bass) come out as new notes. When a string is struck again
+  // (a hit), the strings struck together with it before that show an onset peak at the same moment
+  // are split into new notes there — if three strings or more are struck in all, so that the stir
+  // one plucked string causes in another (fingerpicking, a pinch) is not mistaken for a strum.
+  const restrikes = new Set<(typeof events)[number]>();
+  const hits = events.filter((e) => (onsets[e.startFrame]?.[e.pitchMidi - 21] ?? 0) >= STRUM_HIT_ONSET).sort((a, b) => a.startFrame - b.startFrame);
+  for (const hit of hits) {
+    const t = hit.startFrame;
+    const struck: { event: (typeof events)[number]; frame: number }[] = [];
+    for (const ringing of events) {
+      if (ringing.pitchMidi === hit.pitchMidi || ringing.startFrame > t - 4 || ringing.startFrame + ringing.durationFrames < t + 4) continue;
+      // Struck together with this string before (a note of the same pitch within a strum's spread).
+      const together = events.some((e) => e.pitchMidi === hit.pitchMidi && e.startFrame < t && Math.abs(e.startFrame - ringing.startFrame) <= STRUM_FRAMES);
+      if (!together) continue;
+      const pitch = ringing.pitchMidi - 21;
+      let frame = -1;
+      for (let f = t - 2; f <= t + 2; f++) if ((onsets[f]?.[pitch] ?? 0) >= STRUM_RESTRIKE_ONSET && (frame < 0 || onsets[f][pitch] > onsets[frame][pitch])) frame = f;
+      if (frame < 0) continue;
+      // Struck again, a string stops dying away: its activation comes back up a little.
+      const before = Math.min(...frames.slice(Math.max(0, frame - 3), frame + 1).map((row) => row[pitch]));
+      const after = Math.max(...frames.slice(frame, frame + 7).map((row) => row[pitch]));
+      if (after - before >= STRUM_RESTRIKE_RISE) struck.push({ event: ringing, frame });
+    }
+    // A strum: three strings or more struck at once, new notes and strings struck again together.
+    const fresh = events.filter((e) => Math.abs(e.startFrame - t) <= STRUM_FRAMES && !restrikes.has(e)).length;
+    if (struck.length === 0 || fresh + struck.length < 3) continue;
+    for (const { event, frame } of struck) {
+      const end = event.startFrame + event.durationFrames;
+      const restruck = { ...event, startFrame: frame, durationFrames: end - frame };
+      event.durationFrames = frame - event.startFrame;
+      events.push(restruck);
+      repicks.add(restruck);
+      restrikes.add(restruck);
+    }
+  }
   const round = (value: number, digits: number) => Number(value.toFixed(digits));
   const context = { onsets, contours, transients: transientEnvelope(audio) };
+  const repicked = new Set<NoteEvent>();
   const notes = noteFramesToTime(events)
-    .map((note, i) => ({
-      start: round(note.startTimeSeconds, 4),
-      duration: round(note.durationSeconds, 4),
-      pitch: note.pitchMidi,
-      velocity: round(note.amplitude, 3),
-      ...analyzeArticulation(events[i], note.startTimeSeconds, context),
-    }))
+    .map((note, i) => {
+      const event: NoteEvent = {
+        start: round(note.startTimeSeconds, 4),
+        duration: round(note.durationSeconds, 4),
+        pitch: note.pitchMidi,
+        velocity: round(note.amplitude, 3),
+        ...analyzeArticulation(events[i], note.startTimeSeconds, context),
+      };
+      if (repicks.has(events[i])) repicked.add(event);
+      return event;
+    })
     .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
-  return mergeBends(alignInferredOnsets(mergeRetriggeredNotes(dropPreEchoes(removeHarmonics(notes))))).sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+  // Overtones are checked again once the notes they belong to have their full length.
+  return mergeBends(alignInferredOnsets(removeHarmonics(mergeRetriggeredNotes(dropPreEchoes(removeHarmonics(notes)), repicked)))).sort((a, b) => a.start - b.start || a.pitch - b.pitch);
 }
