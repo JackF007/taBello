@@ -18,6 +18,17 @@ describe('melody and accompaniment', () => {
     expect(arpeggio.filter((n) => melody[notes.indexOf(n)]).length).toBeLessThanOrEqual(4);
   });
 
+  it('leaves the backing out when the lead takes a breath', () => {
+    // A lead with bends and vibrato, then four seconds of the arpeggio alone, then the lead again.
+    const backing = Array.from({ length: 48 }, (_, i) => note(i * 0.3, [45, 52, 57, 62][i % 4], 0.6, 0.6));
+    const phrase = (start: number) => [67, 69, 67].map((p, i) => ({ ...note(start + i * 0.6, p, 0.5, 0.65), ...(i === 1 ? { bend: 2 } : { vibrato: true }) }));
+    const solo = [...phrase(0.15), ...phrase(10.35)];
+    const all = [...backing, ...solo];
+    const melody = melodyNotes(all);
+    expect(solo.every((n) => melody[all.indexOf(n)])).toBe(true);
+    expect(backing.filter((n) => melody[all.indexOf(n)])).toEqual([]);
+  });
+
   it('gives each part its notes and where they come from', () => {
     expect(partNotes(notes, 'all').notes).toBe(notes);
     const melody = partNotes(notes, 'melody');
