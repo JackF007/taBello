@@ -7,7 +7,7 @@ import { METERS, type MeterId } from '../../../../shared/meters';
 import { arrange, detectCapo, detectTuning, meterTicks, type ArrangeOptions, type TabBeat } from './arrange';
 import { applyEdit, findNote } from './edit';
 import { tempoMarks, toAlphaTex, toMidi } from './export';
-import { detectTempoChanges } from './tempo';
+import { clickBarPhase, clickGrid, detectTempoChanges } from './tempo';
 import { alphaTexPitch, chordName, detectKey, detectMeter, estimateTempo, harmonyName, makeKey } from './theory';
 
 const guitar = INSTRUMENTS.guitar;
@@ -739,5 +739,27 @@ describe('voices', () => {
     expect(findNote(arrangement, location)).toMatchObject({ pitch: 40, fret: 0 });
     const result = applyEdit(notes, findNote(arrangement, location)!, location, { type: 'fret', fret: 3 }, { tuning: standard, capo: 0, frets: guitar.frets })!;
     expect(findNote(arrange(result.notes, options), result.location!)).toMatchObject({ pitch: 43, fret: 3 });
+  });
+});
+
+describe('a metronome in the recording', () => {
+  // Clicks every 0.6 s from 2.0 s, accented every 4 beats from the 3rd (3.2 s); two clicks missed
+  // under strums, and one ordinary click taken for an accent.
+  const clicks = Array.from({ length: 40 }, (_, k) => 2 + k * 0.6).filter((_, k) => k !== 9 && k !== 17);
+  const accents = [...Array.from({ length: 10 }, (_, b) => 3.2 + b * 2.4), 2 + 13 * 0.6];
+  const grid = clickGrid({ clicks, accents, period: 0.6 });
+
+  it('gives every beat, the missed ones too', () => {
+    expect(grid.beats).toHaveLength(40);
+    grid.beats.forEach((b, k) => expect(b).toBeCloseTo(2 + k * 0.6, 6));
+    expect(grid.bpm).toBe(100);
+  });
+
+  it('gives the bars from its accents', () => {
+    expect(grid.beatsPerBar).toBe(4);
+    expect(grid.downbeats).toEqual(Array.from({ length: 10 }, (_, b) => 2 + b * 4));
+    // The first note on the 4th beat (3.8 s): the next beat after it is the first of a bar.
+    expect(clickBarPhase(grid, 3.8)).toBe(3);
+    expect(clickBarPhase(grid, 3.2)).toBe(0);
   });
 });
