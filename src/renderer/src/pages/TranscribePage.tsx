@@ -1,7 +1,8 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { AudioWaveform, FileAudio, Music, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
+import FeatureGrid from '@/components/FeatureGrid';
 import InstrumentPicker from '@/components/InstrumentPicker';
 import IsolateControl from '@/components/IsolateControl';
 import SampleTracks from '@/components/SampleTracks';
@@ -55,12 +56,6 @@ const SENSITIVITY_LABELS: Record<Sensitivity, string> = {
   normal: 'Balanced',
   high: 'Sensitive',
 };
-
-const STEPS = [
-  { icon: FileAudio, color: 'var(--gh-green)', title: 'Open a recording', text: 'Any audio or video file: a lesson, a live video, a demo you recorded.' },
-  { icon: AudioWaveform, color: 'var(--gh-yellow)', title: 'Local AI transcription', text: "Spotify's Basic Pitch model detects the notes on your own computer." },
-  { icon: Music, color: 'var(--gh-blue)', title: 'Read, play, export', text: 'Tabs you can play along with and export to Guitar Pro or MIDI.' },
-];
 
 const TranscribePage = () => {
   const [instrument, setInstrument] = useState<InstrumentId>('guitar');
@@ -237,20 +232,14 @@ const TranscribePage = () => {
         <SampleTracks onTry={trySample} disabled={busy} />
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-10">
-        {STEPS.map(({ icon: Icon, color, title, text }, i) => (
-          <div
-            key={title}
-            className="panel p-5 animate-rise-in"
-            style={{ animationDelay: `${240 + i * 90}ms`, '--step': color } as CSSProperties}
-          >
-            <div className="w-10 h-10 rounded-full flex items-center justify-center mb-3 bg-[color-mix(in_srgb,var(--step)_18%,transparent)]">
-              <Icon className="h-5 w-5 text-[color:var(--step)]" />
-            </div>
-            <h3 className="font-semibold mb-1">{title}</h3>
-            <p className="text-sm text-muted-foreground">{text}</p>
-          </div>
-        ))}
+      <section className="panel p-6 mt-10 animate-rise-in [animation-delay:260ms]" aria-labelledby="features-heading">
+        <h2 id="features-heading" className="text-sm uppercase tracking-widest text-muted-foreground mb-1">
+          What TaBello writes for you
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Everything below is automatic, and every choice can be changed on the project page.
+        </p>
+        <FeatureGrid />
       </section>
     </div>
   );
