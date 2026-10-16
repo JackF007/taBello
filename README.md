@@ -243,6 +243,8 @@ Tests that need the separation model are skipped unless you point `TABELLO_DEMUC
 
 If `npm install` fails on Windows with `Cannot find native binding`, install the Visual C++
 Redistributable (`winget install Microsoft.VCRedist.2015+.x64`) and run `npx install-electron`.
+If transcribing says FFmpeg is missing, its download failed or an antivirus quarantined it: run
+`npm rebuild ffmpeg-static` (`npm install` also fetches it again when it is missing).
 
 ### Tech stack
 
