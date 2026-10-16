@@ -11,52 +11,67 @@ connection needed: your files never leave your machine.
 
 ## Features
 
-- **Guitar, bass and ukulele**, with common tunings: standard, drop D, half step down, D standard, DADGAD,
-  open G, 5-string bass, and ukulele high G / low G / D tuning / baritone.
-- **Automatic detection** of tempo, key, time signature (4/4, 3/4, or a triplet feel for swing and
-  shuffle; 6/8 can be chosen by hand), tuning (drop D, half step down, 5-string bass, low-G ukulele)
-  and **capo** — every guess can be overridden from a menu, and the score updates instantly.
+### Transcription
+
+- **Guitar, bass and ukulele**, with their common tunings: standard, drop D, half step down, D standard,
+  DADGAD, open G, 5-string bass, and ukulele high G / low G / D tuning / baritone.
+- **Everything is detected for you**: tempo, key, time signature (4/4, 3/4, or a triplet feel for swing
+  and shuffle; 6/8 can be chosen by hand), tuning (drop D, half step down, 5-string bass, low-G
+  ukulele) and **capo**. Every guess can be changed from a menu, and the score updates at once.
+- **Melody or accompaniment** (*Part*): write everything, only the line on top (a lead guitar, the
+  melody of a fingerstyle piece) or only the part under it. When a solo with bends takes a breath, the
+  backing's notes stay out of it.
+- **Metronome aware**: a click track in the recording (lessons, home recordings) is found and taken
+  out before transcription; its clicks give the exact tempo and beats, and its accents the bar lines.
+- **Isolate the instrument from a band recording** (optional): Demucs, a state-of-the-art source
+  separation model, extracts the bass or guitar part before transcription — still on your computer.
+- **Clean results**: string overtones, echoes of ringing notes and the pre-echo of a pick are left out;
+  strings picked again while they still ring become new notes.
+
+### On the score
+
+- **Notation and tablature** together, tab numbers colored by string.
+- **Fingerings like a guitar teacher's**: the fretting hand sits in a position (one finger per fret) and
+  moves only when it has to, or in a rest; chords use adjacent strings (a G5 is 355, not 3x0), bent and
+  shaken notes are fretted, lead lines sit in the key's box (A minor at the 5th fret) and go back to it
+  in a rest, and bends are pushed by the ring finger, never by the index alone. Checked note by note on
+  a benchmark of 14 passages tabbed by hand (all right).
 - **Chord names and diagrams** above the staff, named after the shapes you play (relative to the capo):
   the harmony is read from whole bars or half bars, so arpeggios and fingerpicking get names too (Am,
   C/G, G7, Em…), and each diagram is the shape you strum or the standard chart shape (x02210 for Am).
-- **Real notation**: in fingerstyle parts a held bass becomes a second voice (stems down) under the
-  melody, a piece that starts on an upbeat begins with a pickup bar (anacrusis), and note durations
-  follow how long the notes really ring.
 - **Playing techniques** (experimental): bends and releases, hammer-ons and pull-offs, slides (between
   notes, into and out of notes) and vibrato, recognized from the pitch contours and the pick attack.
+- **Real notation**: in fingerstyle parts a held bass becomes a second voice (stems down) under the
+  melody, a piece that starts on an upbeat begins with a pickup bar, and note durations follow how long
+  the notes really ring.
 - **Tempo changes**: when a recording speeds up or slows down, the bar lines follow it and the score
   carries the tempo changes (also in Guitar Pro and MIDI exports).
-- **Fingerings like a guitar teacher's**: the fretting hand sits in a position (one finger per fret) and
-  moves only when it has to; chords use adjacent strings (a G5 is 355, not 3x0), bent and shaken notes
-  are fretted, lead lines sit in a box (the key's first box: A minor at the 5th fret) and go back to it
-  in a rest, and bends are pushed by the ring finger, never by the index alone. Checked note by note on
-  a benchmark of 14 passages tabbed by hand (all right).
-- **Melody and accompaniment**: write everything, only the melody on top (a lead line, the melody of
-  a fingerstyle piece) or only the accompaniment under it (*Part* menu). When a solo with bends takes
-  a breath, the backing's notes stay out of it.
-- **Metronome aware**: a click track in the recording (lessons, home recordings) is found and taken
-  out before transcription; its clicks give the exact tempo and beats and its accents the bar lines.
-- **Notation + tablature** with synthesized playback, a cursor, a metronome, slow-down and loops.
-  Tab numbers are colored by string.
-- **Play along with the original recording** (audio or video): the score follows it, and you can loop a
-  passage and slow it down without changing its pitch.
-- **Transpose**, to suit a voice or a capo: move the part up or down a semitone at a time. With
-  *Same shapes (capo)* the tab and chord shapes stay the same and the capo moves (a capo on the 2nd
-  fret: the song sounds a tone higher); without it the part is refingered in the new key.
+
+### Practice
+
+- **Playback** with TaBello's synthesizer, a cursor and a metronome.
+- **Play along with the original recording** (audio or video): the score follows it.
+- **Loop and slow down**: select bars to loop a passage, and lower the speed without changing the pitch.
+- **Transpose**, to suit a voice or a capo, a semitone at a time. With *Same shapes (capo)* the tab and
+  chord shapes stay the same and the capo moves (capo on the 2nd fret: the song sounds a tone higher);
+  without it the part is refingered in the new key.
+
+### Edit, export, keep
+
 - **Edit the tab**: click a note to change its fret, string or pitch, or delete it; undo, or restore
   the detected notes at any time.
-- **Isolate the instrument from a band recording** (optional): Demucs, a state-of-the-art source
-  separation model, extracts the bass or guitar part before transcription — still on your computer.
+- **Export** to Guitar Pro 7 (`.gp` — opens in Guitar Pro, MuseScore, TuxGuitar), MIDI (`.mid`) and
+  alphaTex.
+- **A local library** of all your transcriptions, settings and edits included.
 - **Sample tracks** to try it right away: famous public-domain pieces (Greensleeves, Romance, Minuet in
   G, Ode to Joy, When the Saints Go Marching In) and a blues lick, played by TaBello's own synthesizer.
-- **Export** to Guitar Pro 7 (`.gp` — opens in Guitar Pro, MuseScore, TuxGuitar), MIDI (`.mid`) and alphaTex.
-- **Local library** of all your transcriptions.
+- **Private and free**: no account, no upload, no subscription. It works offline.
 
-![Sample tracks](docs/screenshots/samples.png)
+![Everything TaBello writes for you, on the home page](docs/screenshots/features.png)
 
 | Capo and chords detected on a strummed part | Editing a ukulele tab |
 | --- | --- |
-| ![Project with capo and chord diagrams](docs/screenshots/project-capo.png) | ![Editing a note in a ukulele tab](docs/screenshots/ukulele-tab.png) |
+| ![Project page with its settings, the capo and chord diagrams](docs/screenshots/project-capo.png) | ![Editing a note in a ukulele tab](docs/screenshots/ukulele-tab.png) |
 
 ## Download and install
 
@@ -88,11 +103,18 @@ Until the first release is published, TaBello can be run from source (see [Devel
 
 1. **Pick your instrument** (guitar, bass or ukulele). For a full band recording, turn on **Isolate**
    (the first time, TaBello offers to download the separation model, about 100 MB).
-2. **Drop a file** or click *Choose file* — or click **Try** on one of the sample tracks. Most audio and video formats work (MP3, WAV, FLAC, M4A, MP4,
-   MOV, MKV…), up to 15 minutes. Transcription takes a few seconds per minute of audio.
-3. **Check the result** on the project page:
-   - tuning, capo and time signature are detected (*Auto*); pick another value if a guess is wrong;
-   - if the tempo looks off by a factor of two, use **½×** or **2×**;
+2. **Drop a file** or click *Choose file* — or click **Try** on one of the sample tracks. Most audio and
+   video formats work (MP3, WAV, FLAC, M4A, MP4, MOV, MKV…), up to 15 minutes. Transcription takes a
+   few seconds per minute of audio.
+3. **Check the result** on the project page. Its settings come in three groups:
+   - **What to write**: instrument, part (everything, melody / lead or accompaniment), tuning and capo,
+     detected (*Auto*); pick another value if a guess is wrong;
+   - **Timing and key**: time signature, tempo (if it looks off by a factor of two, use **½×** or
+     **2×**), the key, and **Transpose**;
+   - **In the score**: tick or untick *Chords*, *Techniques* and *Tempo changes*. A detected capo or
+     metronome is shown here too.
+
+   Then:
    - press **Play** to hear the transcription, or switch the player to **Original** to hear the
      recording while the cursor follows the score;
    - drag over bars to select them and press **Loop** to practice a passage; lower the **Speed** to
@@ -100,7 +122,8 @@ Until the first release is published, TaBello can be run from source (see [Devel
    - turn on **Edit notes** and click a note to fix it: type a fret, use ↑/↓ for semitones, Alt+↑/↓ to
      move it to another string, Delete to remove it, Ctrl+Z to undo. *Restore detected notes* brings
      back the original transcription.
-4. **Export** to Guitar Pro or MIDI to keep editing in your favorite program.
+4. **Export** to Guitar Pro or MIDI to keep editing in your favorite program (the menu says what each
+   format is for).
 
 Keyboard: Space plays and pauses.
 
@@ -145,8 +168,7 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 - Tempo changes are followed when they are gradual or sustained; rubato and free-time passages are not.
 - *Melody / lead* follows the line on top: in a fingerstyle melody (no bends or vibrato) the top notes
   of the accompaniment can stand in for it while it rests, and a solo that goes below the
-  accompaniment is not followed. Two guitars
-  playing chords together cannot be told apart.
+  accompaniment is not followed. Two guitars playing chords together cannot be told apart.
 - Where a passage can be fingered in several ways with the same notes (an open A minor or the barre at
   the 5th fret), TaBello writes the most common one; only the sound of open strings tells them apart.
 - In fast strums, light top strings are often not heard, so a chord can come out incomplete.
@@ -163,7 +185,8 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
    part (guitars) from vocals and drums first.
 2. **[Basic Pitch](https://github.com/spotify/basic-pitch-ts)**, Spotify's polyphonic note-detection model,
    runs locally with TensorFlow.js (WebAssembly backend) and lists the notes it hears.
-3. TaBello cleans the result: it removes quiet overtones and merges the phantom re-attacks the model
+3. TaBello cleans the result: it removes overtones (much quieter than their note, or with no attack of
+   their own) and merges the phantom re-attacks the model
    reports for notes that are still ringing (using the model's own onset strength: an echo of a
    ringing string has almost none, a real re-pick a lot), recovers fast notes that the standard length
    filter would drop when they have a clear onset and a steady pitch, and lines up the notes of a chord
@@ -224,7 +247,8 @@ Redistributable (`winget install Microsoft.VCRedist.2015+.x64`) and run `npx ins
 ### Tech stack
 
 Electron, React, TypeScript, Vite (electron-vite), Tailwind CSS with shadcn/ui, FFmpeg, TensorFlow.js
-with Spotify Basic Pitch, alphaTab, @tonejs/midi, Vitest, Playwright and GitHub Actions.
+with Spotify Basic Pitch, ONNX Runtime with Demucs, alphaTab, @tonejs/midi, Vitest, Playwright and
+GitHub Actions.
 
 ### Architecture
 
@@ -302,8 +326,7 @@ e2e/                      Playwright tests of the desktop app
 - **Fingering is tested like a teacher would check it** (`src/renderer/src/lib/music/fingering.test.ts`):
   14 passages written as tab (arpeggios, open and barre chords, power chords, pentatonic licks with
   bends, a lead moving from the 15th fret to the first box, an open-position melody, a riff, Travis
-  picking) go in as notes, and every note's string and
-  fret is compared; where teachers would write a passage in more than one way, each is accepted.
+  picking) go in as notes, and every note's string and fret is compared; where teachers would write a passage in more than one way, each is accepted.
   Before the hand-position model, power chords came out 17% right and a pentatonic lick 13%.
 - **Melody and accompaniment** are measured on the sample recordings whose melody is known
   (`scripts/samples/parts.test.ts`): melody notes found 92–100% (precision) and 86–100% (recall).
@@ -362,6 +385,7 @@ Ideas, roughly by priority — contributions welcome:
 - [x] Metronome detection and removal
 - [ ] Use stereo position to tell two guitars apart in studio mixes
 - [ ] Complete strummed chord shapes the model only half hears (optional)
+- [x] A home page and project page that show every feature
 
 ## Contributing
 

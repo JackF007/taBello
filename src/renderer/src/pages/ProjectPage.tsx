@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, Loader2, Pencil, RotateCcw, Sparkles, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, Check, Download, Loader2, Pencil, Plus, RotateCcw, Sparkles, Timer, Trash2, Undo2 } from 'lucide-react';
 import InstrumentIcon from '@/components/InstrumentIcon';
 import ScoreView from '@/components/ScoreView';
 import { Button } from '@/components/ui/button';
@@ -29,10 +29,10 @@ import { MAX_TRANSPOSE, projectMediaUrl, type PartId, type ExportFormat, type No
 import { getTuning, INSTRUMENTS, MAX_CAPO, type InstrumentId } from '../../../shared/instruments';
 import { METERS, type MeterId } from '../../../shared/meters';
 
-const EXPORTS: { format: ExportFormat; label: string }[] = [
-  { format: 'gp', label: 'Guitar Pro 7 (.gp)' },
-  { format: 'midi', label: 'MIDI (.mid)' },
-  { format: 'alphatex', label: 'alphaTex (.alphatex)' },
+const EXPORTS: { format: ExportFormat; label: string; use: string }[] = [
+  { format: 'gp', label: 'Guitar Pro 7 (.gp)', use: 'Tab and notation for Guitar Pro, TuxGuitar or MuseScore' },
+  { format: 'midi', label: 'MIDI (.mid)', use: 'The notes for a DAW or a notation program' },
+  { format: 'alphatex', label: 'alphaTex (.alphatex)', use: 'The score as text, to edit by hand' },
 ];
 
 const clampTempo = (bpm: number) => Math.min(400, Math.max(20, Math.round(bpm * 10) / 10));
@@ -45,6 +45,43 @@ const Field = ({ label, htmlFor, children }: { label: string; htmlFor?: string; 
     </Label>
     {children}
   </div>
+);
+
+/** A row of settings under a short heading, in the colour of one of the frets. */
+const Group = ({ title, color, children }: { title: string; color: string; children: ReactNode }) => (
+  <section className="border-t pt-4 first:border-t-0 first:pt-0" aria-label={title} style={{ '--group': color } as CSSProperties}>
+    <h2 className="mb-3 flex items-center gap-2 font-sans text-sm font-semibold text-foreground">
+      <span className="h-2 w-2 rounded-full bg-[color:var(--group)] shadow-[0_0_8px_var(--group)]" aria-hidden />
+      {title}
+    </h2>
+    <div className="flex flex-wrap items-end gap-x-6 gap-y-4">{children}</div>
+  </section>
+);
+
+/** An on/off option shown as a chip: ticked when on. */
+const Option = ({
+  pressed,
+  onPressedChange,
+  label,
+  title,
+  children,
+}: {
+  pressed: boolean;
+  onPressedChange: (pressed: boolean) => void;
+  label: string;
+  title: string;
+  children: ReactNode;
+}) => (
+  <Toggle
+    pressed={pressed}
+    onPressedChange={onPressedChange}
+    aria-label={label}
+    title={title}
+    className="h-10 gap-1.5 rounded-full border px-4 text-muted-foreground data-[state=on]:border-gh-yellow/60 data-[state=on]:bg-gh-yellow/10 data-[state=on]:text-gh-yellow"
+  >
+    {pressed ? <Check className="h-4 w-4" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
+    {children}
+  </Toggle>
 );
 
 /** Scientific pitch name, e.g. "E4", for the note editor. */
@@ -288,211 +325,223 @@ const ProjectEditor = ({ project }: { project: Project }) => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {EXPORTS.map(({ format, label }) => (
-              <DropdownMenuItem key={format} onSelect={() => void exportAs(format)}>
-                {label}
+            {EXPORTS.map(({ format, label, use }) => (
+              <DropdownMenuItem key={format} onSelect={() => void exportAs(format)} className="flex-col items-start gap-0.5 py-2">
+                <span className="font-medium">{label}</span>
+                <span className="text-xs text-muted-foreground">{use}</span>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      <div className="panel flex flex-wrap items-end gap-6 p-5 animate-rise-in [animation-delay:80ms]">
-        <Field label="Instrument" htmlFor="instrument">
-          <Select
-            value={settings.instrument}
-            onValueChange={(value) => {
-              const id = value as InstrumentId;
-              updateSettings({ ...settings, instrument: id, tuningId: null, capo: null });
-            }}
-          >
-            <SelectTrigger id="instrument" className="w-[150px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {Object.values(INSTRUMENTS).map((i) => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Part" htmlFor="part">
-          <Select value={settings.part} onValueChange={(value) => updateSettings({ ...settings, part: value as PartId })}>
-            <SelectTrigger id="part" className="w-[170px]" title="Two guitars, or a melody over its accompaniment: write one of them"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Everything</SelectItem>
-              <SelectItem value="melody">Melody / lead</SelectItem>
-              <SelectItem value="accompaniment">Accompaniment</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Tuning" htmlFor="tuning">
-          <Select
-            value={settings.tuningId ?? 'auto'}
-            onValueChange={(value) => updateSettings({ ...settings, tuningId: value === 'auto' ? null : value })}
-          >
-            <SelectTrigger id="tuning" className="w-[260px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">Auto ({detectedTuning.name})</SelectItem>
-              {instrument.tunings.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Capo" htmlFor="capo">
-          <Select
-            value={settings.capo === null ? 'auto' : String(settings.capo)}
-            onValueChange={(value) => updateSettings({ ...settings, capo: value === 'auto' ? null : Number(value) })}
-          >
-            <SelectTrigger id="capo" className="w-[150px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">Auto ({detectedCapo === 0 ? 'none' : `${ordinal(detectedCapo)} fret`})</SelectItem>
-              <SelectItem value="0">No capo</SelectItem>
-              {Array.from({ length: MAX_CAPO }, (_, i) => i + 1).map((fret) => (
-                <SelectItem key={fret} value={String(fret)}>{ordinal(fret)} fret</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Time signature" htmlFor="meter">
-          <Select
-            value={settings.meter ?? 'auto'}
-            onValueChange={(value) => updateSettings({ ...settings, meter: value === 'auto' ? null : (value as MeterId) })}
-          >
-            <SelectTrigger id="meter" className="w-[190px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">Auto ({METERS[detectedMeter.meter].name})</SelectItem>
-              {Object.values(METERS).map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label={meter.quartersPerBeat === 1 ? 'Tempo (BPM)' : 'Tempo (dotted ♩)'} htmlFor="tempo">
-          <div className="flex items-center gap-1">
-            <Input
-              id="tempo"
-              className="w-[84px]"
-              inputMode="decimal"
-              value={tempoText}
-              onChange={(e) => setTempoText(e.target.value)}
-              onBlur={commitTempo}
-              onKeyDown={(e) => e.key === 'Enter' && commitTempo()}
-            />
-            <Button variant="outline" size="sm" onClick={() => updateSettings({ ...settings, tempo: clampTempo(bpm / 2) })} title="Half tempo">½×</Button>
-            <Button variant="outline" size="sm" onClick={() => updateSettings({ ...settings, tempo: clampTempo(bpm * 2) })} title="Double tempo">2×</Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={settings.tempo === null}
-              onClick={() => updateSettings({ ...settings, tempo: null })}
-              title={`Use the detected tempo (${detectedTempo.bpm} BPM)`}
+      <div className="panel space-y-4 p-5 animate-rise-in [animation-delay:80ms]">
+        <Group title="What to write" color="var(--gh-green)">
+          <Field label="Instrument" htmlFor="instrument">
+            <Select
+              value={settings.instrument}
+              onValueChange={(value) => {
+                const id = value as InstrumentId;
+                updateSettings({ ...settings, instrument: id, tuningId: null, capo: null });
+              }}
             >
-              Auto
-            </Button>
+              <SelectTrigger id="instrument" className="w-[150px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.values(INSTRUMENTS).map((i) => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Part" htmlFor="part">
+            <Select value={settings.part} onValueChange={(value) => updateSettings({ ...settings, part: value as PartId })}>
+              <SelectTrigger id="part" className="w-[170px]" title="Two guitars, or a melody over its accompaniment: write one of them"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Everything</SelectItem>
+                <SelectItem value="melody">Melody / lead</SelectItem>
+                <SelectItem value="accompaniment">Accompaniment</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Tuning" htmlFor="tuning">
+            <Select
+              value={settings.tuningId ?? 'auto'}
+              onValueChange={(value) => updateSettings({ ...settings, tuningId: value === 'auto' ? null : value })}
+            >
+              <SelectTrigger id="tuning" className="w-[260px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto ({detectedTuning.name})</SelectItem>
+                {instrument.tunings.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Capo" htmlFor="capo">
+            <Select
+              value={settings.capo === null ? 'auto' : String(settings.capo)}
+              onValueChange={(value) => updateSettings({ ...settings, capo: value === 'auto' ? null : Number(value) })}
+            >
+              <SelectTrigger id="capo" className="w-[150px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto ({detectedCapo === 0 ? 'none' : `${ordinal(detectedCapo)} fret`})</SelectItem>
+                <SelectItem value="0">No capo</SelectItem>
+                {Array.from({ length: MAX_CAPO }, (_, i) => i + 1).map((fret) => (
+                  <SelectItem key={fret} value={String(fret)}>{ordinal(fret)} fret</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+        </Group>
+
+        <Group title="Timing and key" color="var(--gh-blue)">
+          <Field label="Time signature" htmlFor="meter">
+            <Select
+              value={settings.meter ?? 'auto'}
+              onValueChange={(value) => updateSettings({ ...settings, meter: value === 'auto' ? null : (value as MeterId) })}
+            >
+              <SelectTrigger id="meter" className="w-[190px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto ({METERS[detectedMeter.meter].name})</SelectItem>
+                {Object.values(METERS).map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label={meter.quartersPerBeat === 1 ? 'Tempo (BPM)' : 'Tempo (dotted ♩)'} htmlFor="tempo">
+            <div className="flex items-center gap-1">
+              <Input
+                id="tempo"
+                className="w-[84px]"
+                inputMode="decimal"
+                value={tempoText}
+                onChange={(e) => setTempoText(e.target.value)}
+                onBlur={commitTempo}
+                onKeyDown={(e) => e.key === 'Enter' && commitTempo()}
+              />
+              <Button variant="outline" size="sm" onClick={() => updateSettings({ ...settings, tempo: clampTempo(bpm / 2) })} title="Half tempo">½×</Button>
+              <Button variant="outline" size="sm" onClick={() => updateSettings({ ...settings, tempo: clampTempo(bpm * 2) })} title="Double tempo">2×</Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={settings.tempo === null}
+                onClick={() => updateSettings({ ...settings, tempo: null })}
+                title={`Use the detected tempo (${detectedTempo.bpm} BPM)`}
+              >
+                Auto
+              </Button>
+            </div>
+            {beats && tempoChanges && (
+              <p className="text-xs text-muted-foreground" data-testid="tempo-range">
+                Varies {tempoChanges.range[0]}–{tempoChanges.range[1]} BPM
+              </p>
+            )}
+          </Field>
+
+          <Field label="Key">
+            <p className="h-10 flex items-center font-display text-lg">{shownKey.name}</p>
+          </Field>
+
+          <Field label="Transpose" htmlFor="transpose">
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" disabled={!canTranspose(-1)} onClick={() => transposeBy(-1)} aria-label="Transpose down" title="A semitone lower">
+                −
+              </Button>
+              <span id="transpose" className="w-10 text-center font-display tabular-nums" data-testid="transpose">
+                {transpose > 0 ? `+${transpose}` : transpose}
+              </span>
+              <Button variant="outline" size="sm" disabled={!canTranspose(1)} onClick={() => transposeBy(1)} aria-label="Transpose up" title="A semitone higher">
+                +
+              </Button>
+              <Toggle
+                pressed={sameShapes}
+                onPressedChange={setSameShapes}
+                aria-label="Same shapes with a capo"
+                title="Keep the same shapes and frets: the capo moves with the key (a capo makes the song sound higher)"
+                className="h-9 rounded-full border px-3 text-xs data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+              >
+                Same shapes (capo)
+              </Toggle>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={transpose === 0}
+                onClick={() => updateSettings({ ...settings, transpose: 0, capo: null })}
+                title="Back to the key of the recording"
+              >
+                Reset
+              </Button>
+            </div>
+            {transpose !== 0 && (
+              <p className="text-xs text-muted-foreground" data-testid="transpose-note">
+                Sounds {Math.abs(transpose)} semitone{Math.abs(transpose) === 1 ? '' : 's'} {transpose > 0 ? 'higher' : 'lower'} than the recording
+              </p>
+            )}
+          </Field>
+
+        </Group>
+
+        <Group title="In the score" color="var(--gh-yellow)">
+          <Option
+            pressed={settings.chords}
+            onPressedChange={(chords) => updateSettings({ ...settings, chords })}
+            label="Chord names"
+            title="Show chord names over the staff and their diagrams at the top"
+          >
+            Chords
+          </Option>
+
+          <Option
+            pressed={settings.techniques}
+            onPressedChange={(techniques) => updateSettings({ ...settings, techniques })}
+            label="Techniques"
+            title="Write bends, slides, hammer-ons, pull-offs and vibrato (experimental)"
+          >
+            Techniques
+          </Option>
+
+          <Option
+            pressed={settings.tempoChanges}
+            onPressedChange={(tempoChanges) => updateSettings({ ...settings, tempoChanges })}
+            label="Follow tempo changes"
+            title="Follow the recording when it speeds up or slows down (otherwise the tempo is constant)"
+          >
+            Tempo changes
+          </Option>
+
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {metronomeBeats && (
+              <span
+                className="flex items-center gap-1.5 rounded-full border border-gh-blue/60 bg-gh-blue/10 px-3 py-1.5 text-sm text-gh-blue"
+                title="A metronome was heard in the recording: its clicks give the beats and its accents the bars (it is left out of the transcription)"
+                data-testid="metronome"
+              >
+                <Timer className="h-4 w-4" aria-hidden />
+                Metronome · {metronomeBeats.bpm} BPM
+              </span>
+            )}
+
+            {capo > 0 && (
+              <span
+                className="flex items-center gap-1.5 rounded-full border border-gh-yellow/60 bg-gh-yellow/10 px-3 py-1.5 text-sm text-gh-yellow"
+                role="status"
+              >
+                <Sparkles className="h-4 w-4" />
+                Capo on the {ordinal(capo)} fret{settings.capo === null && ' (detected)'}
+              </span>
+            )}
           </div>
-          {beats && tempoChanges && (
-            <p className="text-xs text-muted-foreground" data-testid="tempo-range">
-              Varies {tempoChanges.range[0]}–{tempoChanges.range[1]} BPM
-            </p>
-          )}
-        </Field>
-
-        <Field label="Key">
-          <p className="h-10 flex items-center font-display text-lg">{shownKey.name}</p>
-        </Field>
-
-        <Field label="Transpose" htmlFor="transpose">
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" disabled={!canTranspose(-1)} onClick={() => transposeBy(-1)} aria-label="Transpose down" title="A semitone lower">
-              −
-            </Button>
-            <span id="transpose" className="w-10 text-center font-display tabular-nums" data-testid="transpose">
-              {transpose > 0 ? `+${transpose}` : transpose}
-            </span>
-            <Button variant="outline" size="sm" disabled={!canTranspose(1)} onClick={() => transposeBy(1)} aria-label="Transpose up" title="A semitone higher">
-              +
-            </Button>
-            <Toggle
-              pressed={sameShapes}
-              onPressedChange={setSameShapes}
-              aria-label="Same shapes with a capo"
-              title="Keep the same shapes and frets: the capo moves with the key (a capo makes the song sound higher)"
-              className="h-9 rounded-full border px-3 text-xs data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
-            >
-              Same shapes (capo)
-            </Toggle>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={transpose === 0}
-              onClick={() => updateSettings({ ...settings, transpose: 0, capo: null })}
-              title="Back to the key of the recording"
-            >
-              Reset
-            </Button>
-          </div>
-          {transpose !== 0 && (
-            <p className="text-xs text-muted-foreground" data-testid="transpose-note">
-              Sounds {Math.abs(transpose)} semitone{Math.abs(transpose) === 1 ? '' : 's'} {transpose > 0 ? 'higher' : 'lower'} than the recording
-            </p>
-          )}
-        </Field>
-
-        <Toggle
-          pressed={settings.chords}
-          onPressedChange={(chords) => updateSettings({ ...settings, chords })}
-          aria-label="Chord names"
-          title="Show chord names and diagrams"
-          className="h-10 self-end rounded-full border px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
-        >
-          Chords
-        </Toggle>
-
-        <Toggle
-          pressed={settings.techniques}
-          onPressedChange={(techniques) => updateSettings({ ...settings, techniques })}
-          aria-label="Techniques"
-          title="Write bends, slides, hammer-ons, pull-offs and vibrato (experimental)"
-          className="h-10 self-end rounded-full border px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
-        >
-          Techniques
-        </Toggle>
-
-        <Toggle
-          pressed={settings.tempoChanges}
-          onPressedChange={(tempoChanges) => updateSettings({ ...settings, tempoChanges })}
-          aria-label="Follow tempo changes"
-          title="Follow the recording when it speeds up or slows down (otherwise the tempo is constant)"
-          className="h-10 self-end rounded-full border px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
-        >
-          Tempo changes
-        </Toggle>
-
-        {metronomeBeats && (
-          <span
-            className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm text-muted-foreground"
-            title="A metronome was heard in the recording: its clicks give the beats and its accents the bars (it is left out of the transcription)"
-            data-testid="metronome"
-          >
-            Metronome · {metronomeBeats.bpm} BPM
-          </span>
-        )}
-
-        {capo > 0 && (
-          <span
-            className="ml-auto flex items-center gap-1.5 rounded-full border border-gh-yellow/60 bg-gh-yellow/10 px-3 py-1.5 text-sm text-gh-yellow"
-            role="status"
-          >
-            <Sparkles className="h-4 w-4" />
-            Capo on the {ordinal(capo)} fret{settings.capo === null && ' (detected)'}
-          </span>
-        )}
+        </Group>
       </div>
 
       {project.sourceAvailable ? (
         isVideoFile(project.sourceName) ? (
           <video ref={setMedia} controls src={mediaUrl} className="w-full max-h-72 rounded-2xl bg-black border" aria-label="Original recording" />
         ) : (
-          <audio ref={setMedia} controls src={mediaUrl} className="w-full" aria-label="Original recording" />
+          <div className="panel flex items-center gap-4 py-2 pl-5 pr-2">
+            <span className="shrink-0 text-xs uppercase tracking-widest text-muted-foreground">Original recording</span>
+            <audio ref={setMedia} controls src={mediaUrl} className="h-10 min-w-0 flex-1" aria-label="Original recording" />
+          </div>
         )
       ) : (
         <p className="text-sm text-muted-foreground">
