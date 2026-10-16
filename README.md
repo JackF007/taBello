@@ -25,6 +25,7 @@ connection needed: your files never leave your machine.
   out before transcription; its clicks give the exact tempo and beats, and its accents the bar lines.
 - **Isolate the instrument from a band recording** (optional): Demucs, a state-of-the-art source
   separation model, extracts the bass or guitar part before transcription — still on your computer.
+  TaBello downloads it by itself the first time it starts (about 100 MB, once), so it is ready.
 - **Clean results**: string overtones, echoes of ringing notes and the pre-echo of a pick are left out;
   strings picked again while they still ring become new notes.
 
@@ -102,7 +103,8 @@ Until the first release is published, TaBello can be run from source (see [Devel
 ## How to use it
 
 1. **Pick your instrument** (guitar, bass or ukulele). For a full band recording, turn on **Isolate**
-   (the first time, TaBello offers to download the separation model, about 100 MB).
+   (its separation model, about 100 MB, is downloaded once in the background the first time TaBello
+   starts; without a connection, it is tried again at the next start or with *Retry*).
 2. **Drop a file** or click *Choose file* — or click **Try** on one of the sample tracks. Most audio and
    video formats work (MP3, WAV, FLAC, M4A, MP4, MOV, MKV…), up to 15 minutes. Transcription takes a
    few seconds per minute of audio.
@@ -172,8 +174,10 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 - Where a passage can be fingered in several ways with the same notes (an open A minor or the barre at
   the 5th fret), TaBello writes the most common one; only the sound of open strings tells them apart.
 - In fast strums, light top strings are often not heard, so a chord can come out incomplete.
-- Isolation is limited to recordings of up to 10 minutes. Its model is downloaded separately because
-  its weights are for personal and research use only (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+- Isolation is limited to recordings of up to 10 minutes. Its model is not in the installers but
+  downloaded by TaBello at its first start, because its weights are for personal and research use
+  only (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). If you remove it to free disk space, it
+  is downloaded again only when you turn *Isolate* back on.
 
 ## How it works
 

@@ -51,10 +51,11 @@ Apache-2.0; see the [Basic Pitch paper](https://arxiv.org/abs/2203.09893) for ho
 Transformer Demucs ([Meta, `facebookresearch/demucs`](https://github.com/facebookresearch/demucs)),
 in the ONNX conversion published in the `demucs` npm package (demucs-js 1.0.0, file `htdemucs.onnx`).
 According to demucs-js, these weights derive from Meta's and are available for personal and research
-use only, which is not compatible with the GPL, so neither the repository nor the installers contain them. When a user asks for it, the
-app downloads the file once from the npm registry (or imports a copy the user has), checks its
-SHA-256 (`da9e5101…bdbe748`) and keeps it in the user's data folder; the user is told about those
-terms before downloading.
+use only, which is not compatible with the GPL, so neither the repository nor the installers contain them. The app
+downloads the file once by itself, at its first start, from the npm registry (or imports a copy the
+user has), checks its SHA-256 (`da9e5101…bdbe748`) and keeps it in the user's data folder; those
+terms are shown while it downloads. A user who removes the model or
+stops the download is not overruled: it is downloaded again only when they ask.
 
 ## Sample recordings
 
