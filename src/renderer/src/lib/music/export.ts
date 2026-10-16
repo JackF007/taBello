@@ -58,11 +58,24 @@ function beatToAlphaTex(beat: TabBeat, stringCount: number, chord: ChordLabel | 
 
 const beatTicks = (beat: TabBeat) => (48 / beat.value) * (beat.dotted ? 1.5 : 1) * (beat.tuplet ? 2 / 3 : 1);
 
+/** A chord tone added to a triad, by interval above the root, and the chord type it makes. */
+const EXTENSIONS: Record<string, Record<number, string>> = {
+  '': { 2: 'add9', 9: '6', 10: '7', 11: 'maj7' },
+  m: { 2: 'madd9', 9: 'm6', 10: 'm7' },
+};
+
 /**
  * Names the chords of an arrangement, bar by bar (or half bar when the harmony changes there), from
  * every note that sounds — so arpeggios and fingerpicked parts get chord names too, not only strums.
  * A name is written where its chord starts and only when it changes. Names follow the shapes as
  * played (relative to the capo), as chord charts do; the diagram shows the strings the chord uses.
+ *
+ * Like a musician, it reads the harmony in context. An arpeggio often leaves out a chord tone that
+ * the hand holds anyway (the C of a C/G picked as G–E–G, the third of an Am7 picked as A–E–G): a
+ * stretch that a chord heard whole elsewhere on the same bass explains, with at most one added tone
+ * (6th, 7th or 9th), takes that chord's name. And a chord over the bass of the chord next to it is
+ * read as that chord with an added tone (F6 before F, Cadd9/G before C/G), not as an inversion of
+ * another one (Dm/F, Em/G).
  */
 export function chordLabels(
   arrangement: Arrangement,
@@ -74,6 +87,129 @@ export function chordLabels(
   withBass = true,
 ): (ChordLabel | null)[][] {
   const ticks = meterTicks(arrangement.meter);
+  const pitchClass = (pitch: number) => (((pitch - capo) % 12) + 12) % 12;
+
+  interface Stretch {
+    found: Harmony | null;
+    bass: number;
+    /** Pitch classes clearly heard: sounding (held over from before, too), and played here. */
+    sounding: number[];
+    heard: number[];
+    /** Index of the beat where it starts, and the notes of its beats. */
+    at: number;
+    beats: PlacedNote[][];
+  }
+
+  const analyse = (barIndex: number, from: number, to: number): Stretch | null => {
+    const beats = arrangement.bars[barIndex];
+    const starts: number[] = [];
+    beats.reduce((tick, beat) => (starts.push(tick), tick + beatTicks(beat)), 0);
+    // The bass voice of the same bar sounds too (fingerstyle).
+    const bassBeats = arrangement.bass?.[barIndex] ?? [];
+    const bassStarts: number[] = [];
+    bassBeats.reduce((tick, beat) => (bassStarts.push(tick), tick + beatTicks(beat)), 0);
+
+    const inside = beats.map((beat, i) => ({ beat, i, start: starts[i] })).filter(({ start }) => start >= from && start < to);
+    if (inside.length === 0) return null;
+    const all = [...inside, ...bassBeats.map((beat, i) => ({ beat, i: -1, start: bassStarts[i] })).filter(({ start }) => start >= from && start < to)];
+    const sounding = all.flatMap(({ beat }) => beat.notes.map((note) => ({ note, weight: beatTicks(beat) })));
+    // Harmony needs more than one line: notes together, or an arpeggio spanning an octave.
+    // Notes sounding together, counting the bass voice.
+    const together = Math.max(
+      0,
+      ...inside.map(({ beat, start }) => beat.notes.length + (bassBeats.some((b, k) => b.notes.length > 0 && bassStarts[k] <= start && start < bassStarts[k] + beatTicks(b)) ? 1 : 0)),
+    );
+    const pitches = sounding.map(({ note }) => note.pitch);
+    if (sounding.length === 0 || (together < 2 && (pitches.length < 4 || Math.max(...pitches) - Math.min(...pitches) < 12))) return null;
+    // Each note counts for its written length, except the bass line: a bass note holds the harmony
+    // until the next one (the bass rings on a guitar while the melody moves above it).
+    const lowest = Math.min(...pitches);
+    const bassAt = (o: (typeof all)[number]) => {
+      const low = Math.min(...o.beat.notes.map((n) => n.pitch));
+      return low <= lowest + 7 ? low : null;
+    };
+    const bassOnsets = all.filter((o) => o.beat.notes.length > 0 && bassAt(o) !== null).map((o) => o.start);
+    const weights = new Array<number>(12).fill(0);
+    const chordal = new Array<number>(12).fill(0);
+    // Played here, not held over from the chord before (a note tied into the bar is not its harmony).
+    const struck = new Array<number>(12).fill(0);
+    for (const o of all) {
+      const bassPitch = bassAt(o);
+      for (const note of o.beat.notes) {
+        const length = note.pitch === bassPitch ? Math.min(to, ...bassOnsets.filter((b) => b > o.start)) - o.start : beatTicks(o.beat);
+        const pc = pitchClass(note.pitch);
+        weights[pc] += length;
+        if (o.beat.notes.length >= 3) chordal[pc] += length;
+        if (!note.tied) struck[pc] += length;
+      }
+    }
+    // The bass of the chord is the one on its first beat: an alternating bass (C, then G under a C
+    // chord) does not make an inversion.
+    const firstBeat = all.filter(({ start }) => start < all.reduce((min, a) => Math.min(min, a.start), Infinity) + ticks.beat);
+    const bassPitch = Math.min(...firstBeat.flatMap(({ beat }) => beat.notes.map((n) => n.pitch)).concat(firstBeat.length ? [] : pitches));
+    const bass = pitchClass(bassPitch);
+    const total = weights.reduce((a, b) => a + b, 0);
+    return {
+      found: harmony(weights, bass, withBass, chordal),
+      bass,
+      sounding: weights.flatMap((w, pc) => (w >= total * 0.08 ? [pc] : [])),
+      heard: struck.flatMap((w, pc) => (w >= total * 0.08 ? [pc] : [])),
+      at: inside[0].i,
+      beats: inside.map(({ beat }) => beat.notes),
+    };
+  };
+
+  const tonesOf = (chord: Harmony) => chord.intervals.map((i) => (chord.root + i) % 12);
+  /** Every tone of its chord heard (or every tone but the fifth, which chords often leave out). */
+  const complete = (stretch: Stretch, withoutFifth = false) =>
+    !!stretch.found && stretch.found.intervals.every((i) => (withoutFifth && i === 7) || stretch.sounding.includes((stretch.found!.root + i) % 12));
+
+  // Every stretch of the piece: the bar, and its halves (4/4 and longer).
+  const half = arrangement.meter.beatsPerBar >= 4 ? (arrangement.meter.beatsPerBar / 2) * ticks.beat : null;
+  const stretches = arrangement.bars.map((_, bar) => ({
+    whole: analyse(bar, 0, ticks.bar),
+    halves: half === null ? null : ([analyse(bar, 0, half), analyse(bar, half, ticks.bar)] as const),
+  }));
+
+  // Triads heard whole, on each bass (their root, third or fifth), and how often.
+  const heardWhole = new Map<number, Map<string, { chord: Harmony; count: number }>>();
+  for (const { whole, halves } of stretches) {
+    for (const stretch of [whole, ...(halves ?? [])]) {
+      if (!stretch?.found || !['', 'm'].includes(stretch.found.suffix) || !complete(stretch) || !tonesOf(stretch.found).includes(stretch.bass)) continue;
+      const byName = heardWhole.get(stretch.bass) ?? new Map<string, { chord: Harmony; count: number }>();
+      const name = formatChord(stretch.found, flats);
+      byName.set(name, { chord: stretch.found, count: (byName.get(name)?.count ?? 0) + 1 });
+      heardWhole.set(stretch.bass, byName);
+    }
+  }
+  /** `chord` with the heard notes beyond it as one added tone, if that makes a known chord type. */
+  const extend = (chord: Harmony, heard: number[]): Harmony | null => {
+    const tones = tonesOf(chord);
+    const extra = heard.filter((pc) => !tones.includes(pc));
+    if (extra.length === 0) return chord;
+    const suffix = extra.length === 1 ? EXTENSIONS[chord.suffix]?.[(extra[0] - chord.root + 12) % 12] : undefined;
+    return suffix ? { ...chord, suffix, intervals: chordIntervals(suffix)! } : null;
+  };
+  /** The harmony of a stretch, read in context; `neighbours` are the chords right before and after it. */
+  const read = (stretch: Stretch, neighbours: (Harmony | null)[]): Harmony | null => {
+    const found = stretch.found;
+    const rootPosition = !!found && (found.bass === null || found.bass === found.root);
+    if (found && rootPosition && complete(stretch)) return found;
+    // A chord on its root without its fifth is that chord (a melody passing over it adds no tone).
+    if (found && rootPosition && complete(stretch, true)) return found;
+    // Chords on this bass: those next to it first, then those heard whole elsewhere, most often first.
+    const nearby = neighbours.filter((n): n is Harmony => !!n && (n.bass ?? n.root) === stretch.bass && ['', 'm'].includes(n.suffix));
+    const elsewhere = [...(heardWhole.get(stretch.bass)?.values() ?? [])].sort((a, b) => b.count - a.count).map((k) => k.chord);
+    // An inversion heard whole stays, unless the chord next to it on the same bass explains it; a chord
+    // on its root keeps its root (the context only tells its quality).
+    const candidates = rootPosition ? [...nearby, ...elsewhere].filter((c) => c.root === found!.root) : found && complete(stretch) ? nearby : [...nearby, ...elsewhere];
+    for (const candidate of candidates) {
+      const reading = extend(candidate, stretch.heard);
+      if (reading) return reading;
+    }
+    return found;
+  };
+
   let previous: string | null = null;
   // The last full chord on each root: a bare fifth (A5) later in the piece takes its quality (Am),
   // as a musician reading the harmony in context would.
@@ -87,86 +223,42 @@ export function chordLabels(
     return chord;
   };
   const shapes = new Map<string, (number | null)[]>();
+  const label = (stretch: Stretch, chord: Harmony) => {
+    const name = formatChord(chord, flats);
+    const tones = tonesOf(chord);
+    // The diagram: the shape actually played when the chord is strummed (three strings or more,
+    // all chord tones, within the hand's reach); otherwise the standard shape for this tuning.
+    const strum = stretch.beats.find((notes) => {
+      const fretted = notes.filter((n) => n.fret > 0).map((n) => n.fret);
+      return notes.length >= 3 && notes.every((n) => tones.includes(pitchClass(n.pitch))) && (fretted.length === 0 || Math.max(...fretted) - Math.min(...fretted) <= 4);
+    });
+    let shape = strum ? tuning.map((_, string) => strum.find((n) => n.string === string)?.fret ?? null) : shapes.get(name);
+    if (!shape) {
+      shape = chordVoicing({ root: chord.root, intervals: chord.intervals, bass: withBass ? (chord.bass ?? chord.root) : -1, tuning, frets }) ?? tuning.map(() => null);
+      shapes.set(name, shape);
+    }
+    // alphaTex lists frets from the 1st (highest) string down.
+    return { name, root: chord.root, tones, heard: stretch.sounding, frets: [...shape].reverse(), at: stretch.at };
+  };
+
+  // A chord next to a stretch is context only when it was heard whole.
+  const plain = (stretch: Stretch | null | undefined) => (stretch && complete(stretch) ? stretch.found : null);
   return arrangement.bars.map((beats, barIndex) => {
     const labels: (ChordLabel | null)[] = beats.map(() => null);
-    const starts: number[] = [];
-    beats.reduce((tick, beat) => (starts.push(tick), tick + beatTicks(beat)), 0);
-
-    // The bass voice of the same bar sounds too (fingerstyle).
-    const bassBeats = arrangement.bass?.[barIndex] ?? [];
-    const bassStarts: number[] = [];
-    bassBeats.reduce((tick, beat) => (bassStarts.push(tick), tick + beatTicks(beat)), 0);
-
-    const analyse = (from: number, to: number) => {
-      const inside = beats.map((beat, i) => ({ beat, i, start: starts[i] })).filter(({ start }) => start >= from && start < to);
-      if (inside.length === 0) return null;
-      const all = [...inside, ...bassBeats.map((beat, i) => ({ beat, i: -1, start: bassStarts[i] })).filter(({ start }) => start >= from && start < to)];
-      const sounding = all.flatMap(({ beat }) => beat.notes.map((note) => ({ note, weight: beatTicks(beat) })));
-      // Harmony needs more than one line: notes together, or an arpeggio spanning an octave.
-      // Notes sounding together, counting the bass voice.
-      const together = Math.max(
-        0,
-        ...inside.map(({ beat, start }) => beat.notes.length + (bassBeats.some((b, k) => b.notes.length > 0 && bassStarts[k] <= start && start < bassStarts[k] + beatTicks(b)) ? 1 : 0)),
-      );
-      const pitches = sounding.map(({ note }) => note.pitch);
-      if (sounding.length === 0 || (together < 2 && (pitches.length < 4 || Math.max(...pitches) - Math.min(...pitches) < 12))) return null;
-      // Each note counts for its written length, except the bass line: a bass note holds the harmony
-      // until the next one (the bass rings on a guitar while the melody moves above it).
-      const lowest = Math.min(...pitches);
-      const bassAt = (o: (typeof all)[number]) => {
-        const low = Math.min(...o.beat.notes.map((n) => n.pitch));
-        return low <= lowest + 7 ? low : null;
-      };
-      const bassOnsets = all.filter((o) => o.beat.notes.length > 0 && bassAt(o) !== null).map((o) => o.start);
-      const weights = new Array<number>(12).fill(0);
-      const chordal = new Array<number>(12).fill(0);
-      for (const o of all) {
-        const bassPitch = bassAt(o);
-        for (const note of o.beat.notes) {
-          const length = note.pitch === bassPitch ? Math.min(to, ...bassOnsets.filter((b) => b > o.start)) - o.start : beatTicks(o.beat);
-          const pc = (((note.pitch - capo) % 12) + 12) % 12;
-          weights[pc] += length;
-          if (o.beat.notes.length >= 3) chordal[pc] += length;
-        }
-      }
-      // The bass of the chord is the one on its first beat: an alternating bass (C, then G under a C
-      // chord) does not make an inversion.
-      const firstBeat = all.filter(({ start }) => start < all.reduce((min, a) => Math.min(min, a.start), Infinity) + ticks.beat);
-      const bassPitch = Math.min(...firstBeat.flatMap(({ beat }) => beat.notes.map((n) => n.pitch)).concat(firstBeat.length ? [] : pitches));
-      const bass = (((bassPitch - capo) % 12) + 12) % 12;
-      const found = harmony(weights, bass, withBass, chordal);
-      if (!found) return null;
-      const chord = inContext(found);
-      const name = formatChord(chord, flats);
-      const tones = chord.intervals.map((i) => (chord.root + i) % 12);
-      // The diagram: the shape actually played when the chord is strummed (three strings or more,
-      // all chord tones, within the hand's reach); otherwise the standard shape for this tuning.
-      const strum = inside
-        .map(({ beat }) => beat.notes)
-        .find((notes) => {
-          const fretted = notes.filter((n) => n.fret > 0).map((n) => n.fret);
-          return notes.length >= 3 && notes.every((n) => tones.includes((((n.pitch - capo) % 12) + 12) % 12)) && (fretted.length === 0 || Math.max(...fretted) - Math.min(...fretted) <= 4);
-        });
-      let shape = strum ? tuning.map((_, string) => strum.find((n) => n.string === string)?.fret ?? null) : shapes.get(name);
-      if (!shape) {
-        shape = chordVoicing({ root: chord.root, intervals: chord.intervals, bass: withBass ? (chord.bass ?? chord.root) : -1, tuning, frets }) ?? tuning.map(() => null);
-        shapes.set(name, shape);
-      }
-      // alphaTex lists frets from the 1st (highest) string down.
-      const diagram = [...shape].reverse();
-      // Pitch classes clearly heard in this stretch.
-      const heard = weights.flatMap((w, pc) => (w >= weights.reduce((a, b) => a + b, 0) * 0.08 ? [pc] : []));
-      return { name, root: chord.root, tones, heard, frets: diagram, at: inside[0].i };
+    const { whole, halves } = stretches[barIndex];
+    const before = plain(stretches[barIndex - 1]?.halves?.[1] ?? stretches[barIndex - 1]?.whole);
+    const after = plain(stretches[barIndex + 1]?.halves?.[0] ?? stretches[barIndex + 1]?.whole);
+    const named = (stretch: Stretch | null, neighbours: (Harmony | null)[]) => {
+      const chord = stretch && read(stretch, neighbours);
+      return chord && stretch ? label(stretch, inContext(chord)) : null;
     };
-
-    const whole = analyse(0, ticks.bar);
-    let segments = whole ? [whole] : [];
+    const wholeLabel = named(whole, [before, after]);
+    let segments = wholeLabel ? [wholeLabel] : [];
     // Two chords in one bar (4/4): when both halves are clear and on different roots (passing tones
     // and a moving bass under one chord are not a chord change).
-    if (arrangement.meter.beatsPerBar >= 4) {
-      const half = (arrangement.meter.beatsPerBar / 2) * ticks.beat;
-      const first = analyse(0, half);
-      const second = analyse(half, ticks.bar);
+    if (halves) {
+      const first = named(halves[0], [before, plain(halves[1])]);
+      const second = named(halves[1], [plain(halves[0]), after]);
       // The same notes heard under another name (Em, then G6 for its G–B–E upper strings) are no change.
       // So is a chord inside the other (Bdim's B–D–F within G7).
       const within = (a: NonNullable<typeof first>, b: NonNullable<typeof first>) =>
