@@ -449,6 +449,25 @@ describe('chords', () => {
     expect(tex).toContain('\\chord ("Am" 0 1 2 2 0 x)');
   });
 
+  it('names arpeggiated chords in context, as the hand holds them', () => {
+    // Babe I'm Gonna Leave You's arpeggio, 8ths at 100 BPM, bass on 1 and 3: the C of the C/G shape
+    // and the third of the Am7 are held but not picked once the chords have been heard whole.
+    const eighth = 0.3;
+    const bar = (index: number, bass: number, upper: number[]) =>
+      [0, 4].flatMap((k) => [note((index * 8 + k) * eighth, bass, 4 * eighth), ...upper.map((p, i) => note((index * 8 + k + 1 + i) * eighth, p, eighth))]);
+    const notes = [
+      ...bar(0, 45, [52, 57, 60]), // Am: A, E, A, C
+      ...bar(1, 43, [52, 55, 60]), // C/G: G, E, G, C
+      ...bar(2, 45, [52, 57, 67]), // A, E, A, G: Am7 without its third
+      ...bar(3, 43, [52, 55, 67]), // G, E, G, G: C/G without its C (not Em/G)
+      ...bar(4, 43, [52, 55, 62]), // G, E, G, D: Cadd9/G (not Em7/G)
+    ];
+    const tex = toAlphaTex(arrange(notes, { tuning: standard, frets: guitar.frets, bpm: 100, offset: 0 }), {
+      title: 't', bpm: 100, key: makeKey(9, 'minor'), instrument: guitar, tuning: standard,
+    });
+    expect([...tex.matchAll(/ch "([^"]+)"/g)].map((m) => m[1])).toEqual(['Am', 'C/G', 'Am7', 'C/G', 'Cadd9/G']);
+  });
+
   it('names ukulele chords by their root (re-entrant tuning has no bass)', () => {
     // G7 on ukulele: G4 D4 F4 B4; the lowest pitch, D4, is not on the lowest string.
     expect(chordName([67, 62, 65, 71])).toBe('G7/D');
