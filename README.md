@@ -40,6 +40,9 @@ connection needed: your files never leave your machine.
 - **Chord names and diagrams** above the staff, named after the shapes you play (relative to the capo):
   the harmony is read from whole bars or half bars, so arpeggios and fingerpicking get names too (Am,
   C/G, G7, Em…), and each diagram is the shape you strum or the standard chart shape (x02210 for Am).
+  Like a guitarist, TaBello reads them in context: a chord tone the hand holds but does not pick (the
+  C of a C/G arpeggiated G–E–G, the third of an Am7) is filled in from the same chord heard whole
+  elsewhere, so the name is C/G, not Em/G; added tones give Am7, D7/F#, Cadd9/G or Dm(add9)/A.
 - **Playing techniques** (experimental): bends and releases, hammer-ons and pull-offs, slides (between
   notes, into and out of notes) and vibrato, recognized from the pitch contours and the pick attack.
 - **Real notation**: in fingerstyle parts a held bass becomes a second voice (stems down) under the
@@ -166,7 +169,9 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 - A continuous stream of 16th notes can be heard as 8th notes at twice the tempo; press **½×**.
 - A transposed part plays with TaBello's synthesizer only: the original recording keeps its key.
 - The second voice is written for guitar parts with a held bass; bass, ukulele and strummed parts use
-  one voice. Chord names cover triads, sevenths, sus, add9, 6 and power chords, with slash basses.
+  one voice. Chord names cover triads, sevenths, sus, add9, madd9, 6 and power chords, with slash
+  basses. Where two guitars play chords at the same time, both are heard as one and the names follow
+  their sum.
 - Tempo changes are followed when they are gradual or sustained; rubato and free-time passages are not.
 - *Melody / lead* follows the line on top: in a fingerstyle melody (no bends or vibrato) the top notes
   of the accompaniment can stand in for it while it rests, and a solo that goes below the

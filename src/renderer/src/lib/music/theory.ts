@@ -344,6 +344,7 @@ const CHORD_TYPES: [suffix: string, intervals: number[]][] = [
   ['sus4', [0, 5, 7]],
   ['sus2', [0, 2, 7]],
   ['add9', [0, 2, 4, 7]],
+  ['madd9', [0, 2, 3, 7]],
   ['dim', [0, 3, 6]],
   ['aug', [0, 4, 8]],
   ['5', [0, 7]],
