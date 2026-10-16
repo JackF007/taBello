@@ -21,7 +21,7 @@ export const IpcChannels = {
   cancelSeparationModelDownload: 'separation:cancel-download',
   importSeparationModel: 'separation:import',
   deleteSeparationModel: 'separation:delete',
-  separationModelProgress: 'separation:progress',
+  separationModelChanged: 'separation:changed',
 } as const;
 
 export interface AppInfo {
@@ -96,6 +96,11 @@ export interface TranscriptionRequest {
 
 export interface SeparationModelStatus {
   installed: boolean;
+  /** Downloading now (TaBello does it by itself at the first start), and how far (0..1). */
+  downloading: boolean;
+  progress: number | null;
+  /** Why the last download failed (e.g. no connection); it is tried again at the next start. */
+  error: string | null;
   /** Size of the download and of the installed model, in bytes. */
   downloadBytes: number;
   sizeBytes: number;
@@ -207,12 +212,12 @@ export interface TabelloApi {
   /** Shows a save dialog and writes the data. Resolves to the saved path, or null if cancelled. */
   exportFile(request: ExportRequest): Promise<IpcResult<string | null>>;
   getSeparationModel(): Promise<SeparationModelStatus>;
-  /** Downloads the separation model once (about 100 MB). */
+  /** Downloads the separation model (about 100 MB), or waits for the download already running. */
   downloadSeparationModel(): Promise<IpcResult<SeparationModelStatus>>;
   cancelSeparationModelDownload(): Promise<void>;
   /** Lets the user pick an htdemucs.onnx file. Resolves to null if the dialog is cancelled. */
   importSeparationModel(): Promise<IpcResult<SeparationModelStatus | null>>;
   deleteSeparationModel(): Promise<SeparationModelStatus>;
-  /** Download progress, 0..1. Returns an unsubscribe function. */
-  onSeparationModelProgress(listener: (fraction: number) => void): () => void;
+  /** The model's status whenever it changes (download progress included). Returns an unsubscribe function. */
+  onSeparationModelChange(listener: (status: SeparationModelStatus) => void): () => void;
 }

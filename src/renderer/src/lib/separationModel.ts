@@ -1,6 +1,19 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { requireApi, tabello } from '@/lib/api';
 
-/** Whether the source-separation model is installed (shared by the switch and the samples). */
-export const useSeparationModel = () =>
-  useQuery({ queryKey: ['separation-model'], queryFn: () => requireApi().getSeparationModel(), enabled: tabello !== undefined });
+/**
+ * The source-separation model's status (shared by the switch and the samples), kept up to date while
+ * TaBello downloads it in the background.
+ */
+export const useSeparationModel = () => {
+  const queryClient = useQueryClient();
+  useEffect(
+    () =>
+      tabello?.onSeparationModelChange((status) => {
+        queryClient.setQueryData(['separation-model'], status);
+      }),
+    [queryClient],
+  );
+  return useQuery({ queryKey: ['separation-model'], queryFn: () => requireApi().getSeparationModel(), enabled: tabello !== undefined });
+};
