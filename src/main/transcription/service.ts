@@ -1,5 +1,6 @@
-import { utilityProcess, type UtilityProcess } from 'electron';
+import { app, utilityProcess, type UtilityProcess } from 'electron';
 import ffmpegStatic from 'ffmpeg-static';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { ClickTrack, IpcResult, NoteEvent, Sensitivity, TranscriptionProgress } from '../../shared/ipc';
 import type { InstrumentId } from '../../shared/instruments';
@@ -46,6 +47,18 @@ export function transcribe(
   const binary = ffmpegPath();
   if (!binary) {
     return Promise.resolve({ ok: false, error: { code: 'failed', message: 'FFmpeg is not available for this platform.' } });
+  }
+  // The file can be missing when its download failed or an antivirus quarantined it.
+  if (!existsSync(binary)) {
+    return Promise.resolve({
+      ok: false,
+      error: {
+        code: 'failed',
+        message: app.isPackaged
+          ? `FFmpeg, which TaBello uses to read audio and video, is missing (${binary}); an antivirus may have quarantined it. Reinstall TaBello, or restore the file from the antivirus quarantine.`
+          : `FFmpeg is missing (${binary}). Run "npm rebuild ffmpeg-static" in the TaBello folder (an antivirus may have quarantined the file), then start TaBello again.`,
+      },
+    });
   }
 
   const child = utilityProcess.fork(WORKER_PATH, [], { serviceName: 'TaBello transcription', stdio: 'inherit' });
