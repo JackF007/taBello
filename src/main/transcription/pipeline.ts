@@ -285,8 +285,10 @@ export function removeHarmonics(notes: NoteEvent[]): NoteEvent[] {
           // long before the note it belongs to and sounding with nothing else (a bass picked alone by
           // the thumb, the fingers coming in after) — an octave played on purpose, or within a
           // chord, rings like the rest.
+          // An overtone has no attack of its own, either: one struck clearly weaker than its note's may
+          // be nearly as loud.
           (note.velocity < base.velocity * 0.6 ||
-            (note.velocity < base.velocity * 0.8 &&
+            ((note.velocity < base.velocity * 0.8 || (note.velocity < base.velocity * 0.9 && (note.onset ?? 1) < (base.onset ?? 0) * 0.8)) &&
               note.duration < base.duration * 0.6 &&
               !notes.some((other) => other !== note && other !== base && Math.abs(other.start - base.start) < 0.05))),
       ),

@@ -88,6 +88,15 @@ describe('removeHarmonics', () => {
     const third = { start: 0.01, duration: 0.3, pitch: 60, velocity: 0.5 };
     expect(removeHarmonics([bass, overtone, third])).toHaveLength(3);
   });
+
+  it('drops an octave nearly as loud as its note when its attack is weaker', () => {
+    // The top string of an arpeggio and, an octave above, its overtone (struck weaker, dying early).
+    const string = { start: 0, duration: 1.2, pitch: 64, velocity: 0.5, onset: 0.84 };
+    const overtone = { start: 0.01, duration: 0.4, pitch: 76, velocity: 0.41, onset: 0.63 };
+    expect(removeHarmonics([string, overtone])).toEqual([string]);
+    // Picked as hard as the note under it: an octave played.
+    expect(removeHarmonics([string, { ...overtone, onset: 0.84 }])).toHaveLength(2);
+  });
 });
 
 describe('mergeRetriggeredNotes', () => {
