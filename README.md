@@ -249,6 +249,9 @@ If `npm install` fails on Windows with `Cannot find native binding`, install the
 Redistributable (`winget install Microsoft.VCRedist.2015+.x64`) and run `npx install-electron`.
 If transcribing says FFmpeg is missing, its download failed or an antivirus quarantined it: run
 `npm rebuild ffmpeg-static` (`npm install` also fetches it again when it is missing).
+Recent npm versions block the install scripts of dependencies unless they are approved: the ones
+TaBello needs (FFmpeg's download, esbuild, SWC, the Windows installer builder) are listed under
+`allowScripts` in `package.json`, so a plain `npm install` is enough.
 
 ### Tech stack
 
