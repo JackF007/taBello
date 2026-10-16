@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, FolderOpen, Layers, Loader2, Trash2 } from 'lucide-react';
+import { Download, FolderOpen, Layers, Loader2, RotateCw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { requireApi, tabello } from '@/lib/api';
+import { requireApi } from '@/lib/api';
 import { useSeparationModel } from '@/lib/separationModel';
 import type { SeparationModelStatus } from '../../../shared/ipc';
 
@@ -21,17 +21,17 @@ interface IsolateControlProps {
 }
 
 /**
- * The "isolate the instrument" switch. Turning it on the first time offers to download the
- * separation model (Demucs), which is not bundled because of its license.
+ * The "isolate the instrument" switch. TaBello downloads the separation model (Demucs) by itself at
+ * its first start, as it is not bundled because of its license; meanwhile the switch shows the
+ * download. If it failed, it can be retried; if the user removed the model, turning the switch on
+ * offers to download it again.
  */
 const IsolateControl = ({ instrumentName, checked, onCheckedChange, disabled }: IsolateControlProps) => {
   const { data: model } = useSeparationModel();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [download, setDownload] = useState<number | null>(null);
-
-  useEffect(() => tabello?.onSeparationModelProgress(setDownload), []);
+  const download = model?.downloading ? (model.progress ?? 0) : null;
 
   const installed = (status: SeparationModelStatus) => {
     queryClient.setQueryData(['separation-model'], status);
@@ -43,9 +43,7 @@ const IsolateControl = ({ instrumentName, checked, onCheckedChange, disabled }: 
   };
 
   const startDownload = async () => {
-    setDownload(0);
     const result = await requireApi().downloadSeparationModel();
-    setDownload(null);
     if (result.ok) installed(result.value);
     else if (result.error.code !== 'cancelled') toast({ title: 'Download failed', description: result.error.message, variant: 'destructive' });
   };
@@ -73,6 +71,24 @@ const IsolateControl = ({ instrumentName, checked, onCheckedChange, disabled }: 
         <span className="font-medium">Isolate the {instrumentName}</span>
         <span className="text-muted-foreground"> from a band recording (slower: about the length of the song)</span>
       </label>
+      {!model?.installed && download !== null && !dialogOpen && (
+        <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite" title="Demucs, by Meta: its weights are for personal and research use">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-gh-yellow" />
+          <span>Downloading the separation model (Demucs by Meta, for personal and research use)… {Math.round(download * 100)}%</span>
+          <Progress value={download * 100} className="h-1.5 w-24" aria-label="Separation model download" />
+          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void requireApi().cancelSeparationModelDownload()}>
+            Stop
+          </Button>
+        </div>
+      )}
+      {model && !model.installed && download === null && model.error && (
+        <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground" role="status">
+          <span title={model.error}>The separation model could not be downloaded (no connection?).</span>
+          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void startDownload()} disabled={disabled}>
+            <RotateCw className="h-3.5 w-3.5 mr-1" /> Retry
+          </Button>
+        </div>
+      )}
       {model?.installed && (
         <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground" onClick={() => void remove()} disabled={disabled} title="Delete the separation model to free disk space">
           <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove model ({megabytes(model.sizeBytes)})

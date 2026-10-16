@@ -15,6 +15,7 @@ import {
 } from '../shared/ipc';
 import { isInstrumentId, type InstrumentId } from '../shared/instruments';
 import { getSample } from '../shared/samples';
+import { SeparationModelManager } from './separation/manager';
 import * as separationModel from './separation/model';
 import * as projects from './projects';
 import * as transcription from './transcription/service';
@@ -34,15 +35,31 @@ const modelDir = () => path.join(app.getPath('userData'), 'models');
 /** Bundled sample recordings: next to the app when packaged, in resources/ when run from source. */
 const samplesDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'samples') : path.join(app.getAppPath(), 'resources', 'samples'));
 
-async function separationStatus(): Promise<SeparationModelStatus> {
-  return {
-    installed: await separationModel.isModelInstalled(modelDir()),
-    downloadBytes: separationModel.MODEL_SOURCE.downloadBytes,
-    sizeBytes: separationModel.MODEL_SOURCE.bytes,
-  };
+let modelManager: SeparationModelManager | null = null;
+
+/** The separation model's keeper, which tells every window when its status changes. */
+function modelKeeper(): SeparationModelManager {
+  modelManager ??= new SeparationModelManager({
+    dir: modelDir(),
+    // Chromium's network stack: honours the system proxy settings.
+    fetch: (url, init) => net.fetch(url as string, init),
+    onChange: (status) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.webContents.isDestroyed()) window.webContents.send(IpcChannels.separationModelChanged, status);
+      }
+    },
+  });
+  return modelManager;
 }
 
-let modelDownload: AbortController | null = null;
+/**
+ * Downloads the separation model in the background if it is missing, so that "Isolate" is ready
+ * without asking (TABELLO_NO_MODEL_DOWNLOAD turns this off, e.g. for tests).
+ */
+export function prepareSeparationModel(): void {
+  if (process.env.TABELLO_NO_MODEL_DOWNLOAD) return;
+  void modelKeeper().ensure();
+}
 
 /** Rejects IPC calls from anything other than our own renderer (e.g. an injected iframe). */
 function assertTrustedSender(event: IpcMainInvokeEvent, isTrustedUrl: (url: string) => boolean): void {
@@ -81,8 +98,14 @@ export function registerIpcHandlers(isTrustedUrl: (url: string) => boolean): voi
     };
     let separation: transcription.SeparationJob | undefined;
     if (job.isolate) {
-      if (!(await separationModel.isModelInstalled(modelDir()))) {
-        return fail('invalid', 'Download the separation model first, or turn off "Isolate".');
+      const model = await modelKeeper().status();
+      if (!model.installed) {
+        return fail(
+          'invalid',
+          model.downloading
+            ? `The separation model is still downloading (${Math.round((model.progress ?? 0) * 100)}%): try again when it is ready, or turn off "Isolate".`
+            : 'The separation model is not installed: download it, or turn off "Isolate".',
+        );
       }
       // Demucs separates bass, drums, vocals and "other": guitars and ukuleles are in "other".
       separation = { modelPath: path.join(modelDir(), separationModel.MODEL_FILE), source: job.instrument === 'bass' ? 'bass' : 'other' };
@@ -135,34 +158,21 @@ export function registerIpcHandlers(isTrustedUrl: (url: string) => boolean): voi
     });
   });
 
-  handle(IpcChannels.separationModelStatus, () => separationStatus());
+  handle(IpcChannels.separationModelStatus, () => modelKeeper().status());
 
-  handle(IpcChannels.downloadSeparationModel, async (event): Promise<IpcResult<SeparationModelStatus>> => {
-    if (modelDownload) return fail('invalid', 'The model is already downloading.');
-    const controller = new AbortController();
-    modelDownload = controller;
+  handle(IpcChannels.downloadSeparationModel, async (): Promise<IpcResult<SeparationModelStatus>> => {
     try {
-      await separationModel.downloadModel({
-        dir: modelDir(),
-        // Chromium's network stack: honours the system proxy settings.
-        fetch: (url, init) => net.fetch(url as string, init),
-        signal: controller.signal,
-        onProgress: (fraction) => {
-          if (!event.sender.isDestroyed()) event.sender.send(IpcChannels.separationModelProgress, fraction);
-        },
-      });
-      return { ok: true, value: await separationStatus() };
+      await modelKeeper().download();
+      return { ok: true, value: await modelKeeper().status() };
     } catch (error) {
       if (error instanceof separationModel.ModelError) {
         return fail(error.code === 'cancelled' ? 'cancelled' : error.code === 'invalid' ? 'invalid' : 'failed', error.message);
       }
       return fail('failed', error instanceof Error ? error.message : String(error));
-    } finally {
-      modelDownload = null;
     }
   });
 
-  handle(IpcChannels.cancelSeparationModelDownload, () => modelDownload?.abort());
+  handle(IpcChannels.cancelSeparationModelDownload, () => modelKeeper().cancel());
 
   handle(IpcChannels.importSeparationModel, async (event): Promise<IpcResult<SeparationModelStatus | null>> => {
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -174,17 +184,13 @@ export function registerIpcHandlers(isTrustedUrl: (url: string) => boolean): voi
     const { canceled, filePaths } = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
     if (canceled || filePaths.length === 0) return { ok: true, value: null };
     try {
-      await separationModel.importModel(modelDir(), filePaths[0]);
-      return { ok: true, value: await separationStatus() };
+      return { ok: true, value: await modelKeeper().import(filePaths[0]) };
     } catch (error) {
       return fail('invalid', error instanceof Error ? error.message : String(error));
     }
   });
 
-  handle(IpcChannels.deleteSeparationModel, async () => {
-    await separationModel.deleteModel(modelDir());
-    return separationStatus();
-  });
+  handle(IpcChannels.deleteSeparationModel, () => modelKeeper().remove());
 
   handle(IpcChannels.cancelTranscription, () => transcription.cancelTranscription());
 
