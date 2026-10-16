@@ -29,9 +29,9 @@ export class ModelError extends Error {
   }
 }
 
-export async function isModelInstalled(dir: string): Promise<boolean> {
+export async function isModelInstalled(dir: string, bytes = MODEL_SOURCE.bytes): Promise<boolean> {
   try {
-    return (await stat(path.join(dir, MODEL_FILE))).size === MODEL_SOURCE.bytes;
+    return (await stat(path.join(dir, MODEL_FILE))).size === bytes;
   } catch {
     return false;
   }

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, session, shell } from 'electron';
 import path from 'node:path';
-import { registerIpcHandlers } from './ipc';
+import { prepareSeparationModel, registerIpcHandlers } from './ipc';
 import { APP_HOST, APP_SCHEME, APP_URL, handleProtocols, registerSchemes } from './protocols';
 import { cancelTranscription } from './transcription/service';
 
@@ -67,6 +67,7 @@ if (!app.requestSingleInstanceLock()) {
     handleProtocols();
     registerIpcHandlers(isTrustedUrl);
     createWindow();
+    prepareSeparationModel();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

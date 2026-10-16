@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
-import { IpcChannels, type TabelloApi, type TranscriptionProgress } from '../shared/ipc';
+import { IpcChannels, type SeparationModelStatus, type TabelloApi, type TranscriptionProgress } from '../shared/ipc';
 
 // Only these typed wrappers cross the bridge: the renderer never gets ipcRenderer or any Node.js API.
 const api: TabelloApi = {
@@ -29,10 +29,10 @@ const api: TabelloApi = {
   cancelSeparationModelDownload: () => ipcRenderer.invoke(IpcChannels.cancelSeparationModelDownload),
   importSeparationModel: () => ipcRenderer.invoke(IpcChannels.importSeparationModel),
   deleteSeparationModel: () => ipcRenderer.invoke(IpcChannels.deleteSeparationModel),
-  onSeparationModelProgress: (listener) => {
-    const handler = (_event: IpcRendererEvent, fraction: number) => listener(fraction);
-    ipcRenderer.on(IpcChannels.separationModelProgress, handler);
-    return () => ipcRenderer.removeListener(IpcChannels.separationModelProgress, handler);
+  onSeparationModelChange: (listener) => {
+    const handler = (_event: IpcRendererEvent, status: SeparationModelStatus) => listener(status);
+    ipcRenderer.on(IpcChannels.separationModelChanged, handler);
+    return () => ipcRenderer.removeListener(IpcChannels.separationModelChanged, handler);
   },
 };
 

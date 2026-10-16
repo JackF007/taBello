@@ -41,6 +41,8 @@ test.beforeAll(async () => {
 
   app = await electron.launch({
     args: ['.', `--user-data-dir=${path.join(dir, 'user-data')}`, ...(process.env.CI ? ['--no-sandbox'] : [])],
+    // Not the 100 MB separation model at every run: the tests install it themselves when they need it.
+    env: { ...process.env, TABELLO_NO_MODEL_DOWNLOAD: '1' },
   });
   page = await app.firstWindow();
 });
