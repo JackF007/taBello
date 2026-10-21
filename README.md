@@ -225,7 +225,8 @@ window stays responsive.
 
 ## Development
 
-Requirements: [Node.js](https://nodejs.org/) 22.12 or newer and Git. On Windows, the
+Requirements: [Node.js](https://nodejs.org/) 22.23.4 or newer (or 24.22.1 or newer: the releases with the
+October 2026 security fixes) and Git. On Windows, the
 [Microsoft Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)
 is also needed to unpack Electron during `npm install`.
 

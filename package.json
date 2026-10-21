@@ -17,6 +17,9 @@
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
+  "engines": {
+    "node": "^22.23.4 || >=24.22.1"
+  },
   "scripts": {
     "postinstall": "install-electron && node scripts/ensure-ffmpeg.mjs",
     "dev": "electron-vite dev",
@@ -94,7 +97,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
-    "electron": "^44.5.1",
+    "electron": "^44.9.3",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "embla-carousel-react": "^8.3.0",
