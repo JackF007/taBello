@@ -194,7 +194,8 @@ test('transcribes a bundled sample', async () => {
   await page.getByRole('button', { name: 'Transpose up' }).click();
   await expect(page.getByTestId('transpose')).toHaveText('+2');
   await expect(page.locator('label:has-text("Key") + p')).toHaveText('B minor');
-  await expect(page.getByRole('status')).toContainText('Capo on the 2nd fret');
+  // (A toast is a status too, and stays in the page once closed: look for the capo by its text.)
+  await expect(page.getByRole('status').filter({ hasText: 'Capo on the' })).toContainText('Capo on the 2nd fret');
   await expect(page.getByTestId('transpose-note')).toContainText('2 semitones higher');
   await expect(page.getByRole('radio', { name: 'Original' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Reset' }).click();
@@ -233,8 +234,9 @@ test('offers to download the separation model', async () => {
   await expect(dialog).toContainText('Download the separation model');
   await expect(dialog).toContainText('personal and research use');
   await expect(dialog.getByRole('button', { name: 'Download' })).toBeVisible();
-  // Pressed in the dialog: a key pressed while it is still opening can reach the page instead.
-  await dialog.press('Escape');
+  // Closed with its button: Escape goes to whichever layer is on top (a toast still showing, a menu
+  // closing), which made this test fail now and then.
+  await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator('#isolate')).toHaveAttribute('aria-checked', 'false');
 });
