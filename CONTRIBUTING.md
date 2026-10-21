@@ -16,7 +16,7 @@ makes a difference.
 
 ## Development setup
 
-You need [Node.js](https://nodejs.org/) 22.12+ and Git (on Windows also the Microsoft Visual C++
+You need [Node.js](https://nodejs.org/) 22.23.4+ or 24.22.1+ (with the October 2026 security fixes) and Git (on Windows also the Microsoft Visual C++
 Redistributable; see the README).
 
 ```sh
