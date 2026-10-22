@@ -257,7 +257,9 @@ If transcribing says FFmpeg is missing, its download failed or an antivirus quar
 `npm rebuild ffmpeg-static` (`npm install` also fetches it again when it is missing).
 Recent npm versions block the install scripts of dependencies unless they are approved: the ones
 TaBello needs (FFmpeg's download, esbuild, SWC, the Windows installer builder) are listed under
-`allowScripts` in `package.json`, so a plain `npm install` is enough.
+`allowScripts` in `package.json`, so a plain `npm install` is enough. As a guard against hijacked
+releases, `.npmrc` sets `min-release-age=7`: npm 11+ installs only versions published at least a week
+ago.
 
 ### Tech stack
 
