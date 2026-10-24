@@ -4,8 +4,12 @@
 
 TaBello is a free, open-source desktop app. Give it an audio or video file (a lesson, a live clip, a demo
 you recorded) and it listens, detects the notes with a machine-learning model, and writes standard
-notation plus tablature you can play back, slow down and export. No account, no upload, no internet
-connection needed: your files never leave your machine.
+notation plus tablature you can play back, slow down and export. No account, no upload: your recordings
+never leave your machine. (TaBello goes online only to download its separation model once and to
+check for new versions, which you can turn off.)
+
+> **Public beta.** TaBello is in beta (0.1.0-beta): it works, and it still has rough edges. Please
+> report what goes wrong with *Report a problem* at the bottom of the app.
 
 ![Transcribe screen](docs/screenshots/transcribe.png)
 
@@ -69,7 +73,8 @@ connection needed: your files never leave your machine.
 - **A local library** of all your transcriptions, settings and edits included.
 - **Sample tracks** to try it right away: famous public-domain pieces (Greensleeves, Romance, Minuet in
   G, Ode to Joy, When the Saints Go Marching In) and a blues lick, played by TaBello's own synthesizer.
-- **Private and free**: no account, no upload, no subscription. It works offline.
+- **Private and free**: no account, no upload, no subscription. Your recordings never leave your
+  computer, and it works offline once its separation model is downloaded.
 
 ![Everything TaBello writes for you, on the home page](docs/screenshots/features.png)
 
@@ -80,8 +85,8 @@ connection needed: your files never leave your machine.
 ## Download and install
 
 No programming needed: download the installer for your computer from the
-[Releases page](https://github.com/JackF007/taBello/releases/latest) (under *Assets*), open it, and
-TaBello is ready. It works offline, has no account and costs nothing.
+[Releases page](https://github.com/JackF007/taBello/releases) (the newest release, under *Assets*),
+open it, and TaBello is ready. It has no account and costs nothing.
 
 | Your computer | File to download | How to install |
 | --- | --- | --- |
@@ -101,7 +106,7 @@ To uninstall: on Windows, *Settings → Apps → TaBello → Uninstall*; on a Ma
 *Applications* to the Trash; on Linux, remove it from your software center. Your transcriptions stay
 in your user folder unless you delete them.
 
-Until the first release is published, TaBello can be run from source (see [Development](#development)).
+You can also run TaBello from source (see [Development](#development)).
 
 ## How to use it
 
@@ -403,6 +408,17 @@ Ideas, roughly by priority — contributions welcome:
 - [ ] Use stereo position to tell two guitars apart in studio mixes
 - [ ] Complete strummed chord shapes the model only half hears (optional)
 - [x] A home page and project page that show every feature
+
+## Reporting a problem
+
+At the bottom of the app, *Report a problem* opens GitHub's forms for a bug or a wrong transcription.
+*Show the log* opens the folder of `tabello.log`, the list of errors TaBello met: attach it to the
+report. It holds error messages only, never your recordings (read it first if you like: an error
+can mention a file name).
+
+*Check for updates* (on by default) makes TaBello ask GitHub, at startup, whether a newer version is
+out; nothing is sent about you or your files, and nothing is installed by itself: a bar offers the
+download page.
 
 ## Contributing
 
