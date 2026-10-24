@@ -5,6 +5,10 @@ import type { MeterId } from './meters';
 
 export const IpcChannels = {
   getAppInfo: 'app:get-info',
+  getUpdate: 'app:get-update',
+  getPreferences: 'app:get-preferences',
+  setPreferences: 'app:set-preferences',
+  openLogFolder: 'app:open-log-folder',
   transcribe: 'transcription:start',
   transcribeSample: 'transcription:start-sample',
   cancelTranscription: 'transcription:cancel',
@@ -34,6 +38,21 @@ export interface AppInfo {
     node: string;
   };
 }
+
+/** A newer TaBello release, and the page to download it from. */
+export interface UpdateInfo {
+  version: string;
+  url: string;
+}
+
+/** App-wide preferences. */
+export interface Preferences {
+  /** Look for a newer release on GitHub at startup. */
+  checkForUpdates: boolean;
+}
+
+/** Where to report a problem (GitHub's issue forms: bug, wrong transcription). */
+export const REPORT_URL = 'https://github.com/JackF007/taBello/issues/new/choose';
 
 /** Extensions offered in the file picker. FFmpeg can decode far more, this list only drives the picker. */
 export const MEDIA_EXTENSIONS = [
@@ -191,6 +210,12 @@ export function projectMediaUrl(projectId: string): string {
 
 export interface TabelloApi {
   getAppInfo(): Promise<AppInfo>;
+  /** A newer release found at startup, or null (none, offline, or the check is turned off). */
+  getUpdate(): Promise<UpdateInfo | null>;
+  getPreferences(): Promise<Preferences>;
+  setPreferences(preferences: Preferences): Promise<Preferences>;
+  /** Shows the log file (to attach to a bug report) in the file manager. */
+  openLogFolder(): Promise<void>;
   /**
    * Transcribes a file picked by the user (file input or drag & drop) and saves it as a project.
    * Files not coming from the user's file system are rejected.

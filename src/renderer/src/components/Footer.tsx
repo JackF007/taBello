@@ -1,17 +1,50 @@
 import { useEffect, useState } from 'react';
 import { tabello } from '@/lib/api';
-import type { AppInfo } from '../../../shared/ipc';
+import { REPORT_URL, type AppInfo, type Preferences } from '../../../shared/ipc';
+
+const link = 'underline-offset-2 hover:text-foreground hover:underline';
 
 const Footer = () => {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [preferences, setPreferences] = useState<Preferences | null>(null);
 
   useEffect(() => {
     tabello?.getAppInfo().then(setAppInfo).catch(() => setAppInfo(null));
+    tabello?.getPreferences().then(setPreferences).catch(() => setPreferences(null));
   }, []);
 
+  const toggleUpdates = async () => {
+    if (!tabello || !preferences) return;
+    setPreferences(await tabello.setPreferences({ checkForUpdates: !preferences.checkForUpdates }));
+  };
+
   return (
-    <footer className="py-5 px-6 text-xs text-muted-foreground text-center">
-      TaBello{appInfo && ` v${appInfo.version}`} · free software (GPL-3.0) · runs 100% on your computer
+    <footer className="space-y-1.5 py-5 px-6 text-xs text-muted-foreground text-center">
+      <p>TaBello{appInfo && ` v${appInfo.version}`} · free software (GPL-3.0) · runs 100% on your computer</p>
+      {tabello && (
+        <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          <a href={REPORT_URL} target="_blank" rel="noreferrer" className={link}>
+            Report a problem
+          </a>
+          <span aria-hidden>·</span>
+          <button type="button" className={link} onClick={() => void tabello?.openLogFolder()} title="The log of errors, to attach to a report (it stays on your computer)">
+            Show the log
+          </button>
+          {preferences && (
+            <>
+              <span aria-hidden>·</span>
+              <button
+                type="button"
+                className={link}
+                onClick={() => void toggleUpdates()}
+                title="At startup, TaBello asks GitHub whether a newer version is out (nothing else is sent)"
+              >
+                Check for updates: {preferences.checkForUpdates ? 'on' : 'off'}
+              </button>
+            </>
+          )}
+        </p>
+      )}
     </footer>
   );
 };

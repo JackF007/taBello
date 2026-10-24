@@ -4,6 +4,10 @@ import { IpcChannels, type SeparationModelStatus, type TabelloApi, type Transcri
 // Only these typed wrappers cross the bridge: the renderer never gets ipcRenderer or any Node.js API.
 const api: TabelloApi = {
   getAppInfo: () => ipcRenderer.invoke(IpcChannels.getAppInfo),
+  getUpdate: () => ipcRenderer.invoke(IpcChannels.getUpdate),
+  getPreferences: () => ipcRenderer.invoke(IpcChannels.getPreferences),
+  setPreferences: (preferences) => ipcRenderer.invoke(IpcChannels.setPreferences, preferences),
+  openLogFolder: () => ipcRenderer.invoke(IpcChannels.openLogFolder),
 
   // The path is resolved here from a real File object, so the renderer cannot ask main to read arbitrary paths.
   transcribe: (file, request) =>
