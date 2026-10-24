@@ -42,7 +42,8 @@ test.beforeAll(async () => {
   app = await electron.launch({
     args: ['.', `--user-data-dir=${path.join(dir, 'user-data')}`, ...(process.env.CI ? ['--no-sandbox'] : [])],
     // Not the 100 MB separation model at every run: the tests install it themselves when they need it.
-    env: { ...process.env, TABELLO_NO_MODEL_DOWNLOAD: '1' },
+    // Nor a look for updates on GitHub: the tests run offline.
+    env: { ...process.env, TABELLO_NO_MODEL_DOWNLOAD: '1', TABELLO_NO_UPDATE_CHECK: '1' },
   });
   page = await app.firstWindow();
 });
@@ -239,4 +240,16 @@ test('offers to download the separation model', async () => {
   await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator('#isolate')).toHaveAttribute('aria-checked', 'false');
+});
+
+test('offers a way to report problems and to turn the update check off', async () => {
+  await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Report a problem' })).toHaveAttribute('href', /github\.com\/JackF007\/taBello\/issues\/new\/choose/);
+  await expect(page.getByRole('button', { name: 'Show the log' })).toBeVisible();
+  const updates = page.getByRole('button', { name: /Check for updates/ });
+  await expect(updates).toHaveText('Check for updates: on');
+  await updates.click();
+  await expect(updates).toHaveText('Check for updates: off');
+  await updates.click();
+  await expect(updates).toHaveText('Check for updates: on');
 });

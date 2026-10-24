@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, shell, type IpcMainInvokeEvent } from 'electron';
 import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -10,12 +10,17 @@ import {
   type NoteEvent,
   type Project,
   type ProjectSummary,
+  type Preferences,
   type SeparationModelStatus,
   type Sensitivity,
+  type UpdateInfo,
 } from '../shared/ipc';
 import { isInstrumentId, type InstrumentId } from '../shared/instruments';
 import { getSample } from '../shared/samples';
+import { log, logFile } from './log';
+import { isPreferences, readPreferences, writePreferences } from './preferences';
 import { SeparationModelManager } from './separation/manager';
+import { checkForUpdate } from './updates';
 import * as separationModel from './separation/model';
 import * as projects from './projects';
 import * as transcription from './transcription/service';
@@ -34,6 +39,22 @@ const modelDir = () => path.join(app.getPath('userData'), 'models');
 
 /** Bundled sample recordings: next to the app when packaged, in resources/ when run from source. */
 const samplesDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'samples') : path.join(app.getAppPath(), 'resources', 'samples'));
+
+let updateCheck: Promise<UpdateInfo | null> = Promise.resolve(null);
+
+/**
+ * Looks once for a newer release on GitHub, unless the user turned it off (TABELLO_NO_UPDATE_CHECK
+ * turns it off too, e.g. for tests).
+ */
+export function startUpdateCheck(): void {
+  if (process.env.TABELLO_NO_UPDATE_CHECK) return;
+  updateCheck = readPreferences(app.getPath('userData')).then(async ({ checkForUpdates }) => {
+    if (!checkForUpdates) return null;
+    const update = await checkForUpdate(app.getVersion(), (url, init) => net.fetch(url as string, init));
+    if (update) log('info', `TaBello ${update.version} is available`);
+    return update;
+  });
+}
 
 let modelManager: SeparationModelManager | null = null;
 
@@ -77,6 +98,22 @@ export function registerIpcHandlers(isTrustedUrl: (url: string) => boolean): voi
       return handler(event, ...(args as Args));
     });
 
+  handle(IpcChannels.getUpdate, () => updateCheck);
+
+  handle(IpcChannels.getPreferences, () => readPreferences(app.getPath('userData')));
+
+  handle(IpcChannels.setPreferences, async (_event, preferences: unknown): Promise<Preferences> => {
+    if (!isPreferences(preferences)) throw new Error('Invalid preferences.');
+    await writePreferences(app.getPath('userData'), preferences);
+    if (!preferences.checkForUpdates) updateCheck = Promise.resolve(null);
+    return preferences;
+  });
+
+  handle(IpcChannels.openLogFolder, () => {
+    const file = logFile();
+    if (file) shell.showItemInFolder(file);
+  });
+
   handle(IpcChannels.getAppInfo, (): AppInfo => ({
     name: app.getName(),
     version: app.getVersion(),
@@ -111,7 +148,10 @@ export function registerIpcHandlers(isTrustedUrl: (url: string) => boolean): voi
       separation = { modelPath: path.join(modelDir(), separationModel.MODEL_FILE), source: job.instrument === 'bass' ? 'bass' : 'other' };
     }
     const result = await transcription.transcribe(job.inputPath, job.instrument, job.sensitivity, sendProgress, separation);
-    if (!result.ok) return result;
+    if (!result.ok) {
+      if (result.error.code !== 'cancelled') log('error', `Transcription failed (${job.instrument}${job.isolate ? ', isolated' : ''}): ${result.error.message}`);
+      return result;
+    }
 
     sendProgress({ stage: 'saving', fraction: 0 });
     const summary = await projects.createProject({

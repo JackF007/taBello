@@ -1,6 +1,7 @@
 import { app, BrowserWindow, session, shell } from 'electron';
 import path from 'node:path';
-import { prepareSeparationModel, registerIpcHandlers } from './ipc';
+import { prepareSeparationModel, registerIpcHandlers, startUpdateCheck } from './ipc';
+import { log, logError, startLog } from './log';
 import { APP_HOST, APP_SCHEME, APP_URL, handleProtocols, registerSchemes } from './protocols';
 import { cancelTranscription } from './transcription/service';
 
@@ -46,6 +47,12 @@ function createWindow(): BrowserWindow {
     if (!isTrustedUrl(url)) event.preventDefault();
   });
 
+  // Errors in the page go to the log too (rendering the score, playback…).
+  window.webContents.on('console-message', ({ level, message, lineNumber }) => {
+    if (level === 'error') log('error', `Page: ${message} (line ${lineNumber})`);
+  });
+  window.webContents.on('render-process-gone', (_event, details) => log('error', `The window's process stopped: ${details.reason}`));
+
   void window.loadURL(DEV_SERVER_URL ?? APP_URL);
   return window;
 }
@@ -61,6 +68,14 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    startLog(app.getPath('logs'), `TaBello ${app.getVersion()} on ${process.platform} ${process.arch} (Electron ${process.versions.electron})`);
+    // The monitor only watches: Electron still handles the exception as usual.
+    process.on('uncaughtExceptionMonitor', (error) => logError('Uncaught exception', error));
+    process.on('unhandledRejection', (reason) => logError('Unhandled rejection', reason));
+    app.on('child-process-gone', (_event, details) => {
+      if (details.reason !== 'clean-exit' && details.reason !== 'killed') log('error', `${details.name ?? details.type} stopped: ${details.reason} (exit code ${details.exitCode})`);
+    });
+
     // TaBello never needs camera, microphone, notifications, etc.
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 
@@ -68,6 +83,7 @@ if (!app.requestSingleInstanceLock()) {
     registerIpcHandlers(isTrustedUrl);
     createWindow();
     prepareSeparationModel();
+    startUpdateCheck();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import UpdateNotice from "@/components/UpdateNotice";
 import { tabello } from "@/lib/api";
 import TranscribePage from "./pages/TranscribePage";
 import LibraryPage from "./pages/LibraryPage";
@@ -26,6 +27,7 @@ const App = () => (
         <div className="flex flex-col min-h-screen">
           <div className="stage-lights" aria-hidden="true" />
           <Header />
+          <UpdateNotice />
           {!tabello && (
             <p role="alert" className="bg-destructive/10 text-destructive text-sm text-center py-2">
               TaBello must be run as a desktop app (npm run dev), not in a browser.
