@@ -252,4 +252,11 @@ test('offers a way to report problems and to turn the update check off', async (
   await expect(updates).toHaveText('Check for updates: off');
   await updates.click();
   await expect(updates).toHaveText('Check for updates: on');
+  const sound = page.getByRole('button', { name: /Startup sound/ });
+  await expect(sound).toHaveText('Startup sound: on');
+  await sound.click();
+  await expect(sound).toHaveText('Startup sound: off');
+  // The other preference is kept.
+  await expect(updates).toHaveText('Check for updates: on');
+  await sound.click();
 });

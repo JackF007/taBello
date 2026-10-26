@@ -13,9 +13,9 @@ const Footer = () => {
     tabello?.getPreferences().then(setPreferences).catch(() => setPreferences(null));
   }, []);
 
-  const toggleUpdates = async () => {
+  const toggle = async (key: keyof Preferences) => {
     if (!tabello || !preferences) return;
-    setPreferences(await tabello.setPreferences({ checkForUpdates: !preferences.checkForUpdates }));
+    setPreferences(await tabello.setPreferences({ ...preferences, [key]: !preferences[key] }));
   };
 
   return (
@@ -36,10 +36,14 @@ const Footer = () => {
               <button
                 type="button"
                 className={link}
-                onClick={() => void toggleUpdates()}
+                onClick={() => void toggle('checkForUpdates')}
                 title="At startup, TaBello asks GitHub whether a newer version is out (nothing else is sent)"
               >
                 Check for updates: {preferences.checkForUpdates ? 'on' : 'off'}
+              </button>
+              <span aria-hidden>·</span>
+              <button type="button" className={link} onClick={() => void toggle('startupSound')} title="The short tune TaBello plays when it opens">
+                Startup sound: {preferences.startupSound ? 'on' : 'off'}
               </button>
             </>
           )}
