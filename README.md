@@ -11,7 +11,7 @@ check for new versions, which you can turn off.)
 > **Public beta.** TaBello is in beta (0.1.0-beta): it works, and it still has rough edges. Please
 > report what goes wrong with *Report a problem* at the bottom of the app.
 
-![Transcribe screen](docs/screenshots/transcribe.png)
+![TaBello transcribing Greensleeves, then playing the tab with its cursor](docs/screenshots/demo.gif)
 
 ## Features
 
@@ -109,6 +109,8 @@ in your user folder unless you delete them.
 You can also run TaBello from source (see [Development](#development)).
 
 ## How to use it
+
+![The Transcribe screen: pick the instrument, drop a recording or try a sample](docs/screenshots/transcribe.png)
 
 1. **Pick your instrument** (guitar, bass or ukulele). For a full band recording, turn on **Isolate**
    (its separation model, about 100 MB, is downloaded once in the background the first time TaBello
