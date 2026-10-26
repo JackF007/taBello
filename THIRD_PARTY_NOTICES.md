@@ -19,7 +19,7 @@ source checkout.
 | [demucs-js](https://github.com/bakkot/demucs-js) — `dsp.js` (STFT), with one fix, in `src/main/separation/demucs-js/`; separation code adapted from it | 1.0.0 | MIT | Kevin Gibbons and contributors |
 | [alphaTab](https://github.com/CoderLine/alphaTab) | 1.8.4 | MPL-2.0 | Daniel Kuschny and contributors (used unmodified) |
 | [Bravura](https://github.com/steinbergmedia/bravura) music font (shipped with alphaTab) | — | SIL OFL 1.1 | Steinberg Media Technologies GmbH |
-| SONiVOX EAS soundfont `sonivox.sf2` (shipped with alphaTab) | — | Apache-2.0 | Sonic Network Inc. |
+| [GeneralUser GS](https://github.com/mrbumpy409/GeneralUser-GS) soundfont — guitars, bass and metronome click, reduced and rebalanced by `scripts/build-soundfont.py` | 2.0.3 | GeneralUser GS License v2.0 (free use and modification, see `soundfont/LICENSE.txt`) | S. Christian Collins |
 | [@tonejs/midi](https://github.com/Tonejs/Midi) | 2.0.28 | MIT | Yotam Mann |
 | [React](https://react.dev/) | 18.3.1 | MIT | Facebook, Inc. and its affiliates |
 | [React Router](https://reactrouter.com/) | 6.27.0 | MIT | React Training LLC; Remix Software Inc. |

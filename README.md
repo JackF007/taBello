@@ -57,7 +57,8 @@ check for new versions, which you can turn off.)
 
 ### Practice
 
-- **Playback** with TaBello's synthesizer, a cursor and a metronome.
+- **Playback** with realistic guitar, bass and ukulele sounds (the GeneralUser GS soundfont), a cursor
+  and a metronome.
 - **Play along with the original recording** (audio or video): the score follows it.
 - **Loop and slow down**: select bars to loop a passage, and lower the speed without changing the pitch.
 - **Transpose**, to suit a voice or a capo, a semitone at a time. With *Same shapes (capo)* the tab and
@@ -224,8 +225,8 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
 6. It splits a held bass from the melody into two voices, names the **chords** from the harmony of
    each bar (chord tones weighted by how long they ring, the bass note for slash chords), picks a
    standard diagram for each one, and **[alphaTab](https://alphatab.net/)**
-   renders the notation, tablature and chord diagrams and plays them back — with its own synthesizer
-   or by following the original recording.
+   renders the notation, tablature and chord diagrams and plays them back — with its synthesizer and
+   the sampled instruments of GeneralUser GS, or by following the original recording.
 
 Everything runs on your machine; transcription happens in a separate background process so the
 window stays responsive.
@@ -433,5 +434,6 @@ TaBello is free software: you can redistribute it and/or modify it under the ter
 [GNU General Public License v3.0 or later](LICENSE).
 
 It builds on many open-source projects — FFmpeg (GPL-3.0), Spotify Basic Pitch and TensorFlow.js
-(Apache-2.0), alphaTab (MPL-2.0), Electron and React (MIT), and fonts under the SIL Open Font License.
+(Apache-2.0), alphaTab (MPL-2.0), Electron and React (MIT), fonts under the SIL Open Font License and
+the GeneralUser GS soundfont by S. Christian Collins.
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list and their licenses.
