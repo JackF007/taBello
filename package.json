@@ -32,7 +32,7 @@
     "test": "vitest run",
     "benchmark": "vitest run --config vitest.benchmark.config.ts",
     "samples": "vite-node scripts/generate-samples.ts",
-    "startup-sound": "vite-node scripts/generate-startup-sound.ts",
+    "menu-music": "vite-node scripts/generate-menu-music.ts",
     "test:e2e": "electron-vite build && playwright test"
   },
   "allowScripts": {

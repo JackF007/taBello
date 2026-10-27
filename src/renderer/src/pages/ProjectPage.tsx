@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Toggle } from '@/components/ui/toggle';
 import { useToast } from '@/hooks/use-toast';
 import { requireApi } from '@/lib/api';
+import { useMenuMusic } from '@/lib/menuMusic';
 import { formatDate, formatDuration, isVideoFile } from '@/lib/format';
 import { arrange, detectCapo, detectTuning } from '@/lib/music/arrange';
 import { applyEdit, findNote, type NoteEdit, type NoteLocation } from '@/lib/music/edit';
@@ -641,6 +642,8 @@ const ProjectEditor = ({ project }: { project: Project }) => {
 
 const ProjectPage = () => {
   const { id = '' } = useParams();
+  // No menu music over a song.
+  useMenuMusic(false);
   const { data: project, error, isLoading } = useQuery({
     queryKey: ['project', id],
     queryFn: async () => {

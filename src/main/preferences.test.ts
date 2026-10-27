@@ -19,18 +19,18 @@ describe('preferences', () => {
     expect(await readPreferences(path.join(dir, 'none'))).toEqual(DEFAULT_PREFERENCES);
     writeFileSync(path.join(dir, 'preferences.json'), '{ not json');
     expect(await readPreferences(dir)).toEqual(DEFAULT_PREFERENCES);
-    await writePreferences(dir, { checkForUpdates: false, startupSound: true });
-    expect(await readPreferences(dir)).toEqual({ checkForUpdates: false, startupSound: true });
+    await writePreferences(dir, { checkForUpdates: false, music: true });
+    expect(await readPreferences(dir)).toEqual({ checkForUpdates: false, music: true });
     // A preference added later keeps its default in an older file.
     writeFileSync(path.join(dir, 'preferences.json'), '{"checkForUpdates": false}');
-    expect(await readPreferences(dir)).toEqual({ checkForUpdates: false, startupSound: true });
+    expect(await readPreferences(dir)).toEqual({ checkForUpdates: false, music: true });
   });
 
   it('accepts only known preferences from the window', () => {
-    expect(isPreferences({ checkForUpdates: false, startupSound: false })).toBe(true);
+    expect(isPreferences({ checkForUpdates: false, music: false })).toBe(true);
     expect(isPreferences({ checkForUpdates: false })).toBe(false);
-    expect(isPreferences({ checkForUpdates: 'no', startupSound: true })).toBe(false);
-    expect(isPreferences({ checkForUpdates: true, startupSound: true, extra: 1 })).toBe(false);
+    expect(isPreferences({ checkForUpdates: 'no', music: true })).toBe(false);
+    expect(isPreferences({ checkForUpdates: true, music: true, extra: 1 })).toBe(false);
     expect(isPreferences(null)).toBe(false);
   });
 });

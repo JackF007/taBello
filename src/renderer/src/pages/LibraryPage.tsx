@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { requireApi } from '@/lib/api';
+import { useMenuMusic } from '@/lib/menuMusic';
 import { formatDate, formatDuration } from '@/lib/format';
 import type { ProjectSummary } from '../../../shared/ipc';
 import { INSTRUMENTS } from '../../../shared/instruments';
@@ -69,6 +70,7 @@ const ProjectCard = ({ project, index, onDelete }: { project: ProjectSummary; in
 };
 
 const LibraryPage = () => {
+  useMenuMusic(true);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: projects, isLoading } = useQuery({ queryKey: ['projects'], queryFn: () => requireApi().listProjects() });
