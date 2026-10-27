@@ -10,6 +10,8 @@ directories:
   output: release/${version}
 files:
   - out/**
+  # alphaTab's build plugin also copies its own soundfont; TaBello plays with GeneralUser GS instead.
+  - "!out/renderer/assets/soundfont/**"
   - package.json
 extraResources:
   # Shipped next to the app so users can read them (GPL-3.0 and third-party obligations).

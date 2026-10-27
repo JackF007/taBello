@@ -133,7 +133,8 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
       },
       player: {
         playerMode: original ? PlayerMode.EnabledExternalMedia : PlayerMode.EnabledSynthesizer,
-        soundFont: './assets/soundfont/sonivox.sf2',
+        // GeneralUser GS guitars and bass, built by scripts/build-soundfont.py.
+        soundFont: './soundfont/generaluser-gs-tabello.sf2',
         scrollElement: scrollRef.current,
         enableCursor: true,
         enableAnimatedBeatCursor: true,
