@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useToast } from '@/hooks/use-toast';
 import { requireApi, tabello } from '@/lib/api';
+import { useMenuMusic } from '@/lib/menuMusic';
 import { useSeparationModel } from '@/lib/separationModel';
 import { cn } from '@/lib/utils';
 import type { IpcResult, ProjectSummary, Sensitivity, TranscriptionProgress, TranscriptionStage } from '../../../shared/ipc';
@@ -70,6 +71,8 @@ const TranscribePage = () => {
   const { toast } = useToast();
 
   useEffect(() => tabello?.onTranscriptionProgress(setProgress), []);
+  // The menu music gives way while a song is being transcribed.
+  useMenuMusic(progress === null);
 
   const run = async (name: string, withIsolation: boolean, transcribe: () => Promise<IpcResult<ProjectSummary>>) => {
     setSource({ name, isolate: withIsolation });

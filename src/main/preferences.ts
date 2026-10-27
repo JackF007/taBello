@@ -5,7 +5,7 @@ import type { Preferences } from '../shared/ipc';
 
 const FILE = 'preferences.json';
 
-export const DEFAULT_PREFERENCES: Preferences = { checkForUpdates: true, startupSound: true };
+export const DEFAULT_PREFERENCES: Preferences = { checkForUpdates: true, music: true };
 const KEYS = Object.keys(DEFAULT_PREFERENCES) as (keyof Preferences)[];
 
 /** Reads the preferences, keeping the defaults for anything missing or malformed. */

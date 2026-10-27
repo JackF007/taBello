@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { tabello } from '@/lib/api';
+import { setMusicEnabled } from '@/lib/menuMusic';
 import { REPORT_URL, type AppInfo, type Preferences } from '../../../shared/ipc';
 
 const link = 'underline-offset-2 hover:text-foreground hover:underline';
@@ -15,7 +16,9 @@ const Footer = () => {
 
   const toggle = async (key: keyof Preferences) => {
     if (!tabello || !preferences) return;
-    setPreferences(await tabello.setPreferences({ ...preferences, [key]: !preferences[key] }));
+    const saved = await tabello.setPreferences({ ...preferences, [key]: !preferences[key] });
+    setPreferences(saved);
+    if (key === 'music') setMusicEnabled(saved.music);
   };
 
   return (
@@ -42,8 +45,8 @@ const Footer = () => {
                 Check for updates: {preferences.checkForUpdates ? 'on' : 'off'}
               </button>
               <span aria-hidden>·</span>
-              <button type="button" className={link} onClick={() => void toggle('startupSound')} title="The short tune TaBello plays when it opens">
-                Startup sound: {preferences.startupSound ? 'on' : 'off'}
+              <button type="button" className={link} onClick={() => void toggle('music')} title="The soft tune TaBello plays in its menus; it stops whenever a song is open">
+                Music: {preferences.music ? 'on' : 'off'}
               </button>
             </>
           )}

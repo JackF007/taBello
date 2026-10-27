@@ -184,6 +184,8 @@ test('transcribes a bundled sample', async () => {
   await page.getByRole('button', { name: 'Try Greensleeves' }).click();
   await page.waitForURL(/#\/project\//, { timeout: 60_000 });
   await expect(page.getByRole('heading', { name: 'Greensleeves' })).toBeVisible();
+  // The menu music gives way to the song.
+  await expect(page.locator('html')).toHaveAttribute('data-music', 'stopped');
   await expect(page.locator('#meter')).toContainText('Auto (3/4');
   await expect(page.locator('label:has-text("Key") + p')).toHaveText('A minor');
   // The sample plays as the original recording.
@@ -252,11 +254,15 @@ test('offers a way to report problems and to turn the update check off', async (
   await expect(updates).toHaveText('Check for updates: off');
   await updates.click();
   await expect(updates).toHaveText('Check for updates: on');
-  const sound = page.getByRole('button', { name: /Startup sound/ });
-  await expect(sound).toHaveText('Startup sound: on');
-  await sound.click();
-  await expect(sound).toHaveText('Startup sound: off');
+  // The menu music plays here, and stops at once when turned off.
+  const music = page.getByRole('button', { name: /^Music/ });
+  await expect(music).toHaveText('Music: on');
+  await expect(page.locator('html')).toHaveAttribute('data-music', 'playing');
+  await music.click();
+  await expect(music).toHaveText('Music: off');
+  await expect(page.locator('html')).toHaveAttribute('data-music', 'stopped');
   // The other preference is kept.
   await expect(updates).toHaveText('Check for updates: on');
-  await sound.click();
+  await music.click();
+  await expect(page.locator('html')).toHaveAttribute('data-music', 'playing');
 });

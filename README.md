@@ -251,7 +251,7 @@ npm run dev        # start the app with hot reload
 | `npm test` | Unit and integration tests (includes a real FFmpeg + Basic Pitch run) |
 | `npm run benchmark` | Accuracy benchmark on [GuitarSet](#measuring-accuracy) |
 | `npm run samples` | Regenerate the sample tracks in `resources/samples/` from `scripts/samples/scores.ts` |
-| `npm run startup-sound` | Regenerate the startup tune (`src/renderer/public/sounds/startup.ogg`), an original motif played by the same synthesizer |
+| `npm run menu-music` | Regenerate the menu music (`src/renderer/public/sounds/menu-music.ogg`), an original loop played by alphaTab with the app's soundfont |
 | `npm run test:e2e` | Build, then drive the real app with Playwright |
 | `npm run lint` / `npm run typecheck` | ESLint / TypeScript checks |
 | `npm run build` | Production build into `out/` |
@@ -420,8 +420,8 @@ At the bottom of the app, *Report a problem* opens GitHub's forms for a bug or a
 report. It holds error messages only, never your recordings (read it first if you like: an error
 can mention a file name).
 
-*Startup sound* turns off the short tune TaBello plays when it opens (an original motif, made with
-its own synthesizer). *Check for updates* (on by default) makes TaBello ask GitHub, at startup, whether a newer version is
+*Music* turns off the soft tune TaBello plays in its menus, as a game does: an original loop for
+guitars and bass, which fades out as soon as a song is transcribed or opened and comes back in the menus. *Check for updates* (on by default) makes TaBello ask GitHub, at startup, whether a newer version is
 out; nothing is sent about you or your files, and nothing is installed by itself: a bar offers the
 download page.
 
