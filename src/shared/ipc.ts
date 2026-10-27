@@ -49,6 +49,8 @@ export interface UpdateInfo {
 export interface Preferences {
   /** Look for a newer release on GitHub at startup. */
   checkForUpdates: boolean;
+  /** Play the short startup sound. */
+  startupSound: boolean;
 }
 
 /** Where to report a problem (GitHub's issue forms: bug, wrong transcription). */

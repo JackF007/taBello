@@ -115,7 +115,7 @@ const TranscribePage = () => {
       <section className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] mb-10">
         <div className="animate-rise-in">
           <span className="inline-flex items-center gap-1.5 rounded-full border bg-card/70 px-3 py-1 text-xs font-semibold text-muted-foreground mb-5">
-            <ShieldCheck className="h-3.5 w-3.5 text-gh-green" /> 100% offline · open source
+            <ShieldCheck className="h-3.5 w-3.5 text-gh-green" /> 100% offline
           </span>
           <h1 className="text-5xl leading-[1.05] mb-5">
             Turn any recording

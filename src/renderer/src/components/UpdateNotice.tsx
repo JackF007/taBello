@@ -14,7 +14,8 @@ const UpdateNotice = () => {
 
   if (!update) return null;
   const stopChecking = async () => {
-    await tabello?.setPreferences({ checkForUpdates: false });
+    const preferences = await tabello?.getPreferences();
+    if (preferences) await tabello?.setPreferences({ ...preferences, checkForUpdates: false });
     setUpdate(null);
   };
   return (
