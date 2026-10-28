@@ -4,7 +4,11 @@
   "version": "0.1.0-beta.1",
   "description": "Offline desktop app that turns audio and video recordings into guitar, bass and ukulele tabs.",
   "license": "GPL-3.0-or-later",
-  "author": "TaBello contributors",
+  "author": {
+    "name": "Giacomo Ferlaino (JackF007)",
+    "email": "45083625+JackF007@users.noreply.github.com",
+    "url": "https://github.com/JackF007"
+  },
   "homepage": "https://github.com/JackF007/taBello",
   "desktopName": "tabello.desktop",
   "repository": {

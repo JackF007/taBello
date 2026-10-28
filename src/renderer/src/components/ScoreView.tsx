@@ -78,7 +78,7 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
   const [hasRange, setHasRange] = useState(false);
   const [speed, setSpeed] = useState('1');
   const [error, setError] = useState<string | null>(null);
-  const [highlight, setHighlight] = useState<Box | null>(null);
+  const [highlights, setHighlights] = useState<Box[]>([]);
 
   // Latest values for alphaTab callbacks, which are registered once per player.
   const texRef = useRef(tex);
@@ -98,10 +98,10 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     const location = selectedRef.current;
     const beat = location && api?.score?.tracks[0]?.staves[0]?.bars[location.bar]?.voices[location.voice ?? 0]?.beats[location.beat];
     const note = beat?.notes.find((n) => n.string - 1 === location!.string);
-    // The tablature is rendered below the notation: its note bounds come last.
-    const bounds = note && api?.boundsLookup?.findBeats(beat!)?.flatMap((b) => b.notes ?? []).filter((n) => n.note === note).at(-1);
-    const box = bounds?.noteHeadBounds;
-    setHighlight(box ? { x: box.x, y: box.y, w: box.w, h: box.h } : null);
+    // The note in both staves: its head in the notation and its number in the tablature, so an
+    // edit shows in both.
+    const bounds = note ? (api?.boundsLookup?.findBeats(beat!)?.flatMap((b) => b.notes ?? []).filter((n) => n.note === note) ?? []) : [];
+    setHighlights(bounds.map(({ noteHeadBounds: box }) => ({ x: box.x, y: box.y, w: box.w, h: box.h })));
   }, []);
 
   useEffect(updateHighlight, [selected, updateHighlight]);
@@ -143,10 +143,9 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     });
     api.scoreLoaded.on(colorTabByString);
     api.renderStarted.on(() => setIsRendering(true));
-    api.renderFinished.on(() => {
-      setIsRendering(false);
-      updateHighlight();
-    });
+    api.renderFinished.on(() => setIsRendering(false));
+    // Note positions are known only once the whole score is laid out.
+    api.postRenderFinished.on(updateHighlight);
     api.playerReady.on(() => {
       if (original) (api.player!.output as synth.IExternalMediaSynthOutput).handler = createMediaHandler(media, () => offsetRef.current);
       const { metronome: click, loop: looping, speed: rate } = settingsRef.current;
@@ -351,14 +350,15 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
         )}
         <div className="relative">
           <div ref={containerRef} className={`min-h-[300px] ${onNoteClick ? 'cursor-pointer' : ''}`} />
-          {highlight && (
+          {highlights.map((box, i) => (
             <div
+              key={i}
               aria-hidden
               data-testid="selected-note"
               className="pointer-events-none absolute rounded-md border-2 border-gh-yellow shadow-[0_0_12px_2px_rgba(255,214,0,0.6)]"
-              style={{ left: highlight.x - 4, top: highlight.y - 3, width: highlight.w + 8, height: highlight.h + 6 }}
+              style={{ left: box.x - 4, top: box.y - 3, width: box.w + 8, height: box.h + 6 }}
             />
-          )}
+          ))}
         </div>
       </div>
     </div>

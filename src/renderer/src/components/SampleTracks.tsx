@@ -2,19 +2,21 @@ import type { CSSProperties } from 'react';
 import { Layers, Play } from 'lucide-react';
 import InstrumentIcon from '@/components/InstrumentIcon';
 import { Button } from '@/components/ui/button';
-import { INSTRUMENTS } from '../../../shared/instruments';
+import { INSTRUMENTS, type InstrumentId } from '../../../shared/instruments';
 import { SAMPLES, type Sample } from '../../../shared/samples';
 
 interface SampleTracksProps {
   onTry: (sample: Sample) => void;
   disabled?: boolean;
+  /** The instrument chosen above: the part a band sample is transcribed for. */
+  instrument: InstrumentId;
 }
 
 /** Famous public-domain pieces bundled with the app, to try TaBello without a recording of your own. */
-const SampleTracks = ({ onTry, disabled }: SampleTracksProps) => (
+const SampleTracks = ({ onTry, disabled, instrument: chosen }: SampleTracksProps) => (
   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
     {SAMPLES.map((sample) => {
-      const instrument = INSTRUMENTS[sample.instrument];
+      const instrument = INSTRUMENTS[sample.band ? chosen : sample.instrument];
       return (
         <div
           key={sample.id}
@@ -39,6 +41,7 @@ const SampleTracks = ({ onTry, disabled }: SampleTracksProps) => (
             disabled={disabled}
             onClick={() => onTry(sample)}
             aria-label={`Try ${sample.title}`}
+            title={sample.band ? `Transcribe the ${instrument.name.toLowerCase()} part` : undefined}
           >
             <Play className="h-3.5 w-3.5 mr-1" /> Try
           </Button>

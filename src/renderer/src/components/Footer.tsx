@@ -23,7 +23,7 @@ const Footer = () => {
 
   return (
     <footer className="space-y-1.5 py-5 px-6 text-xs text-muted-foreground text-center">
-      <p>TaBello{appInfo && ` v${appInfo.version}`} · free software (GPL-3.0) · runs 100% on your computer</p>
+      <p>TaBello{appInfo && ` v${appInfo.version}`} · © 2026 Giacomo Ferlaino (JackF007) · free software (GPL-3.0) · runs 100% on your computer</p>
       {tabello && (
         <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
           <a href={REPORT_URL} target="_blank" rel="noreferrer" className={link}>

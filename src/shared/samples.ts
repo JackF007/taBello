@@ -6,6 +6,7 @@ export interface Sample {
   id: string;
   title: string;
   composer: string;
+  /** The instrument it is played on; a band mix is transcribed for the instrument the user chose. */
   instrument: InstrumentId;
   /** File name in the samples folder. */
   file: string;
@@ -61,7 +62,7 @@ export const SAMPLES: Sample[] = [
     composer: 'Traditional',
     instrument: 'bass',
     file: 'saints-band.ogg',
-    description: 'A full band (drums, bass, guitar, lead). Transcribe the bass with "Isolate" on.',
+    description: 'A full band (drums, bass, guitar, lead): choose bass or guitar above for that part, isolated.',
     band: true,
   },
 ];

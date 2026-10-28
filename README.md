@@ -432,6 +432,8 @@ For a transcription that came out wrong, a short clip (a few seconds) plus the s
 
 ## License
 
+Copyright © 2026 Giacomo Ferlaino (JackF007).
+
 TaBello is free software: you can redistribute it and/or modify it under the terms of the
 [GNU General Public License v3.0 or later](LICENSE).
 

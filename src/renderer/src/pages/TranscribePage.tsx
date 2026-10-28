@@ -99,13 +99,12 @@ const TranscribePage = () => {
   const start = (selected: File) =>
     run(selected.name, useIsolation, () => requireApi().transcribe(selected, { instrument, sensitivity, isolate: useIsolation }));
 
-  // Samples are transcribed for their instrument; band mixes are isolated when the model is there.
+  // A solo sample is transcribed for its instrument; a band mix for the instrument chosen above,
+  // isolated when the model is there. Either way the choice above stays as the user left it.
   const trySample = (sample: Sample) => {
     const withIsolation = sample.band ? !!model?.installed : useIsolation;
-    setInstrument(sample.instrument);
-    void run(sample.title, withIsolation, () =>
-      requireApi().transcribeSample(sample.id, { instrument: sample.instrument, sensitivity, isolate: withIsolation }),
-    );
+    const part = sample.band ? instrument : sample.instrument;
+    void run(sample.title, withIsolation, () => requireApi().transcribeSample(sample.id, { instrument: part, sensitivity, isolate: withIsolation }));
   };
 
   const busy = progress !== null;
@@ -232,7 +231,7 @@ const TranscribePage = () => {
         <p className="text-sm text-muted-foreground mb-4">
           Famous public-domain pieces, played by TaBello's own synthesizer.
         </p>
-        <SampleTracks onTry={trySample} disabled={busy} />
+        <SampleTracks onTry={trySample} disabled={busy} instrument={instrument} />
       </section>
 
       <section className="panel p-6 mt-10 animate-rise-in [animation-delay:260ms]" aria-labelledby="features-heading">
