@@ -118,6 +118,8 @@ test('transcribes a video into a playable, exportable score', async () => {
   await page.keyboard.press('ArrowUp');
   await expect(info).not.toHaveText(name!);
   await expect(page.locator('#note-fret')).toHaveValue(String(fret + 1));
+  // The edited note stays selected in both the notation and the tablature.
+  await expect(page.getByTestId('selected-note')).toHaveCount(2);
   const noteCount = async () => Number((await page.getByText(/· \d+ notes ·/).textContent())!.match(/(\d+) notes/)![1]);
   const before = await noteCount();
   await page.getByRole('button', { name: 'Delete note' }).click();
@@ -213,10 +215,21 @@ test('transcribes a bundled sample', async () => {
   await page.getByRole('option', { name: 'Everything' }).click();
 });
 
+test('transcribes a band sample for the instrument chosen', async () => {
+  for (const instrument of ['Guitar', 'Bass']) {
+    await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
+    await page.getByRole('radio', { name: instrument }).click();
+    await page.getByRole('button', { name: 'Try When the Saints Go Marching In' }).click();
+    await page.waitForURL(/#\/project\//, { timeout: 120_000 });
+    await expect(page.locator('#instrument')).toContainText(instrument);
+  }
+});
+
 test('isolates the bass of the band sample', async () => {
   test.skip(!process.env.TABELLO_DEMUCS_MODEL, 'needs TABELLO_DEMUCS_MODEL');
   test.setTimeout(600_000);
   await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
+  await page.getByRole('radio', { name: 'Bass' }).click();
   await page.getByRole('button', { name: 'Try When the Saints Go Marching In' }).click();
   await expect(page.getByText('Isolating instrument').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForURL(/#\/project\//, { timeout: 600_000 });
@@ -246,6 +259,7 @@ test('offers to download the separation model', async () => {
 
 test('offers a way to report problems and to turn the update check off', async () => {
   await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
+  await expect(page.locator('footer')).toContainText('© 2026 Giacomo Ferlaino (JackF007)');
   await expect(page.getByRole('link', { name: 'Report a problem' })).toHaveAttribute('href', /github\.com\/JackF007\/taBello\/issues\/new\/choose/);
   await expect(page.getByRole('button', { name: 'Show the log' })).toBeVisible();
   const updates = page.getByRole('button', { name: /Check for updates/ });

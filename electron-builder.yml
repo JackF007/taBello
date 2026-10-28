@@ -5,6 +5,8 @@
 # The app icon is build/icon.png, rendered from build/icon.svg.
 appId: org.tabello.app
 productName: TaBello
+# Shown as the publisher and copyright in the installers and in the app's About box.
+copyright: Copyright © 2026 Giacomo Ferlaino (JackF007)
 directories:
   buildResources: build
   output: release/${version}
@@ -59,7 +61,7 @@ linux:
   executableName: tabello
   syncDesktopName: true
   synopsis: Turn recordings into guitar, bass and ukulele tabs
-  maintainer: JackF007 <45083625+JackF007@users.noreply.github.com>
+  maintainer: Giacomo Ferlaino (JackF007) <45083625+JackF007@users.noreply.github.com>
 publish:
   provider: github
   releaseType: draft
