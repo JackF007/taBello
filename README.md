@@ -121,7 +121,10 @@ You can also run TaBello from source (see [Development](#development)).
    few seconds per minute of audio.
 3. **Check the result** on the project page. Its settings come in three groups:
    - **What to write**: instrument, part (everything, melody / lead or accompaniment), tuning and capo,
-     detected (*Auto*); pick another value if a guess is wrong;
+     detected (*Auto*); pick another value if a guess is wrong. Guitar and ukulele play the same part,
+     so switching between them rewrites the notes at once; the bass plays its own, so choosing it
+     listens to the recording again for the bass (isolated if the tab was) and opens it as a new
+     project, next to the first one;
    - **Timing and key**: time signature, tempo (if it looks off by a factor of two, use **½×** or
      **2×**), the key, and **Transpose**;
    - **In the score**: tick or untick *Chords*, *Techniques* and *Tempo changes*. A detected capo or
@@ -151,7 +154,9 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
   which also contains keyboards.
 - **Clean, close recordings beat distant or noisy ones.** Heavy distortion, reverb and effects make
   notes harder to detect.
-- **Choose the right instrument before transcribing**: it sets the frequency range the model listens to.
+- **Choose the right instrument before transcribing**: it sets the frequency range the model listens to
+  (and, with *Isolate*, which part is taken from the band). For the bass of a guitar tab, pick *Bass* on
+  the project page: TaBello transcribes it from the same recording.
 - **Sensitivity**: if you get too many stray notes, try *Strict*; if quiet notes are missing, try
   *Sensitive*.
 - **Tuning matters**: drop D, half step down, 5-string bass and low-G ukulele are recognized; for other

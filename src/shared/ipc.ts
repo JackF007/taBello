@@ -11,6 +11,7 @@ export const IpcChannels = {
   openLogFolder: 'app:open-log-folder',
   transcribe: 'transcription:start',
   transcribeSample: 'transcription:start-sample',
+  transcribeProjectAgain: 'transcription:start-project',
   cancelTranscription: 'transcription:cancel',
   transcriptionProgress: 'transcription:progress',
   listProjects: 'projects:list',
@@ -225,6 +226,11 @@ export interface TabelloApi {
   transcribe(file: File, request: TranscriptionRequest): Promise<IpcResult<ProjectSummary>>;
   /** Transcribes one of the bundled sample recordings (see shared/samples.ts). */
   transcribeSample(sampleId: string, request: TranscriptionRequest): Promise<IpcResult<ProjectSummary>>;
+  /**
+   * Listens to a project's recording again for another part (the bass of a guitar tab), isolated if
+   * the project was; saves it as a new project, the first one is kept.
+   */
+  transcribeProjectAgain(projectId: string, instrument: InstrumentId): Promise<IpcResult<ProjectSummary>>;
   cancelTranscription(): Promise<void>;
   /** Returns an unsubscribe function. */
   onTranscriptionProgress(listener: (progress: TranscriptionProgress) => void): () => void;

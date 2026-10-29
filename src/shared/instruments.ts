@@ -88,6 +88,14 @@ export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
 /** Highest capo position offered and detected. */
 export const MAX_CAPO = 9;
 
+/**
+ * Whether two instruments play the same part of a recording: guitar and ukulele share the chords and
+ * melody (one's notes can be written for the other), the bass plays its own line, to be heard anew.
+ */
+export function samePart(a: InstrumentId, b: InstrumentId): boolean {
+  return (a === 'bass') === (b === 'bass');
+}
+
 export function isInstrumentId(value: unknown): value is InstrumentId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(INSTRUMENTS, value);
 }

@@ -13,6 +13,7 @@ const api: TabelloApi = {
   transcribe: (file, request) =>
     ipcRenderer.invoke(IpcChannels.transcribe, { ...request, path: webUtils.getPathForFile(file) }),
   transcribeSample: (sampleId, request) => ipcRenderer.invoke(IpcChannels.transcribeSample, sampleId, request),
+  transcribeProjectAgain: (projectId, instrument) => ipcRenderer.invoke(IpcChannels.transcribeProjectAgain, projectId, instrument),
   cancelTranscription: () => ipcRenderer.invoke(IpcChannels.cancelTranscription),
   onTranscriptionProgress: (listener) => {
     const handler = (_event: IpcRendererEvent, progress: TranscriptionProgress) => listener(progress);

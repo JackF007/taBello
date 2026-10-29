@@ -13,44 +13,12 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useToast } from '@/hooks/use-toast';
 import { requireApi, tabello } from '@/lib/api';
 import { useMenuMusic } from '@/lib/menuMusic';
+import { ISOLATE_STAGES, overallPercent, STAGES } from '@/lib/progress';
 import { useSeparationModel } from '@/lib/separationModel';
 import { cn } from '@/lib/utils';
-import type { IpcResult, ProjectSummary, Sensitivity, TranscriptionProgress, TranscriptionStage } from '../../../shared/ipc';
+import type { IpcResult, ProjectSummary, Sensitivity, TranscriptionProgress } from '../../../shared/ipc';
 import { INSTRUMENTS, type InstrumentId } from '../../../shared/instruments';
 import type { Sample } from '../../../shared/samples';
-
-interface Stage {
-  stage: TranscriptionStage;
-  label: string;
-  weight: number;
-  color: string;
-}
-
-const STAGES: Stage[] = [
-  { stage: 'starting', label: 'Starting', weight: 0.02, color: 'var(--gh-green)' },
-  { stage: 'extracting', label: 'Extracting audio', weight: 0.18, color: 'var(--gh-red)' },
-  { stage: 'transcribing', label: 'Detecting notes', weight: 0.75, color: 'var(--gh-yellow)' },
-  { stage: 'saving', label: 'Saving', weight: 0.05, color: 'var(--gh-blue)' },
-];
-
-// With source separation, isolating the instrument takes most of the time.
-const ISOLATE_STAGES: Stage[] = [
-  { stage: 'starting', label: 'Starting', weight: 0.02, color: 'var(--gh-green)' },
-  { stage: 'extracting', label: 'Extracting audio', weight: 0.05, color: 'var(--gh-red)' },
-  { stage: 'separating', label: 'Isolating instrument', weight: 0.7, color: 'var(--gh-orange)' },
-  { stage: 'transcribing', label: 'Detecting notes', weight: 0.2, color: 'var(--gh-yellow)' },
-  { stage: 'saving', label: 'Saving', weight: 0.03, color: 'var(--gh-blue)' },
-];
-
-/** Maps per-stage progress onto a single 0–100 bar. */
-function overallPercent(stages: Stage[], { stage, fraction }: TranscriptionProgress): number {
-  let done = 0;
-  for (const s of stages) {
-    if (s.stage === stage) return Math.round((done + s.weight * fraction) * 100);
-    done += s.weight;
-  }
-  return 100;
-}
 
 const SENSITIVITY_LABELS: Record<Sensitivity, string> = {
   low: 'Strict',
