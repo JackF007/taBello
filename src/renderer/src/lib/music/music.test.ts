@@ -5,7 +5,7 @@ import type { NoteEvent } from '../../../../shared/ipc';
 import { INSTRUMENTS } from '../../../../shared/instruments';
 import { METERS, type MeterId } from '../../../../shared/meters';
 import { arrange, detectCapo, detectTuning, meterTicks, type ArrangeOptions, type TabBeat } from './arrange';
-import { applyEdit, findNote } from './edit';
+import { applyEdit, findNote, locateSource } from './edit';
 import { tempoMarks, toAlphaTex, toMidi } from './export';
 import { clickBarPhase, clickGrid, detectTempoChanges } from './tempo';
 import { alphaTexPitch, chordName, detectKey, detectMeter, estimateTempo, harmonyName, makeKey } from './theory';
@@ -563,8 +563,25 @@ describe('applyEdit', () => {
   it('moves a note to another string at the same pitch', () => {
     const { placed, location } = at(2);
     // G3: open 3rd string by default; move it to the 5th fret of the 4th string (D).
-    const result = applyEdit(notes, placed, location, { type: 'string', string: 2 }, context)!;
+    const result = applyEdit(notes, placed, location, { type: 'string', string: 2, keep: 'pitch' }, context)!;
     expect(findNote(arrange(result.notes, options), result.location!)).toMatchObject({ fret: 5, pitch: 55 });
+  });
+
+  it('moves a note to another string at the same fret, as typed in a tab', () => {
+    const { placed, location } = at(0);
+    // C3 is the 3rd fret of the A string; the 3rd fret of the D string is F3.
+    const result = applyEdit(notes, placed, location, { type: 'string', string: 2, keep: 'fret' }, context)!;
+    expect(findNote(arrange(result.notes, options), result.location!)).toMatchObject({ fret: 3, pitch: 53, string: 2 });
+  });
+
+  it('drags a note up and later, and finds it again', () => {
+    const { placed, location } = at(0);
+    const result = applyEdit(notes, placed, location, { type: 'move', semitones: 2, seconds: 0.25 }, context)!;
+    expect(result.notes[0]).toMatchObject({ pitch: 50, start: 0.25 });
+    const moved = arrange(result.notes, options);
+    const found = locateSource(moved, (sources) => sources.includes(0))!;
+    expect(findNote(moved, found)).toMatchObject({ pitch: 50 });
+    expect(found.beat).toBeGreaterThan(0);
   });
 
   it('moves the pitch by semitones', () => {
@@ -577,7 +594,7 @@ describe('applyEdit', () => {
     const { placed, location } = at(0);
     expect(applyEdit(notes, placed, location, { type: 'fret', fret: 30 }, context)).toBeNull();
     // C3 cannot be played on the high E string.
-    expect(applyEdit(notes, placed, location, { type: 'string', string: 5 }, context)).toBeNull();
+    expect(applyEdit(notes, placed, location, { type: 'string', string: 5, keep: 'pitch' }, context)).toBeNull();
     expect(applyEdit(notes, placed, location, { type: 'pitch', delta: -20 }, context)).toBeNull();
   });
 });

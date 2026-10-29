@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Download, Loader2, Pencil, Plus, RotateCcw, Sparkles, Timer, Trash2, Undo2 } from 'lucide-react';
 import InstrumentIcon from '@/components/InstrumentIcon';
-import ScoreView from '@/components/ScoreView';
+import ScoreView, { type NoteDrag } from '@/components/ScoreView';
 import SwitchPartDialog from '@/components/SwitchPartDialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,7 +21,7 @@ import { requireApi } from '@/lib/api';
 import { useMenuMusic } from '@/lib/menuMusic';
 import { formatDate, formatDuration, isVideoFile } from '@/lib/format';
 import { arrange, detectCapo, detectTuning } from '@/lib/music/arrange';
-import { applyEdit, findNote, type NoteEdit, type NoteLocation } from '@/lib/music/edit';
+import { applyEdit, findNote, locateSource, type NoteEdit, type NoteLocation } from '@/lib/music/edit';
 import { toAlphaTex, toMidi } from '@/lib/music/export';
 import { partNotes } from '@/lib/music/parts';
 import { toGuitarPro } from '@/lib/music/guitarPro';
@@ -92,6 +92,10 @@ const pitchName = (midi: number) => {
   return name[0].toUpperCase() + name.slice(1).replace('#', '♯');
 };
 const STRING_NAMES = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
+/** Name of a string, given its index in the tuning's physical order (lowest first). */
+const stringName = (string: number, count: number) => STRING_NAMES[count - 1 - string] ?? `${count - string}th`;
+/** The grid a dragged note moves by, from its length in quarter notes. */
+const SLOT_NAMES: Record<string, string> = { '0.25': 'sixteenth', '0.5': 'eighth', '1': 'quarter' };
 
 const ProjectEditor = ({ project }: { project: Project }) => {
   const [settings, setSettings] = useState<ProjectSettings>(project.settings);
@@ -100,6 +104,10 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const [history, setHistory] = useState<NoteEvent[][]>([]);
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<NoteLocation | null>(null);
+  /** An edited note to select again once the tab is rearranged (an index into the sounding notes). */
+  const [follow, setFollow] = useState<number | null>(null);
+  /** Bumped to play the selected note, so an edit is heard. */
+  const [preview, setPreview] = useState(0);
   // An instrument of another part, waiting for the user to have it transcribed.
   const [otherPart, setOtherPart] = useState<InstrumentId | null>(null);
   const [media, setMedia] = useState<HTMLMediaElement | null>(null);
@@ -214,19 +222,64 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const selectedNote = selected && findNote(arrangement, selected);
   const editContext = { tuning: tuning.strings, capo, frets: instrument.frets };
 
+  /** Why an edit cannot be played, in words. */
+  const unplayable = (change: NoteEdit, note: { pitch: number; fret: number }): string => {
+    const count = tuning.strings.length;
+    if (change.type === 'fret') return `Fret ${change.fret} is not on the neck: frets go from 0 to ${instrument.frets - capo}${capo ? ' above the capo' : ''}.`;
+    if (change.type === 'string' && change.keep === 'pitch') {
+      const open = tuning.strings[change.string] + capo;
+      if (change.string < 0 || change.string >= count) return 'There is no string beyond this one.';
+      return `${pitchName(note.pitch)} cannot be played on the ${stringName(change.string, count)} string: it is ${note.pitch < open ? 'lower than the open string' : 'beyond its last fret'}.`;
+    }
+    if (change.type === 'string') return `Fret ${note.fret} is not on the ${stringName(change.string, count)} string.`;
+    return `That note is out of the ${instrument.name.toLowerCase()}'s range.`;
+  };
+
   const edit = (change: NoteEdit) => {
     if (!selected || !selectedNote) return;
     // The arrangement's notes are the part's: edit the same notes in the whole transcription.
     const placed = { ...selectedNote, sources: selectedNote.sources.map((k) => part.sources[k]) };
     const result = applyEdit(sounding, placed, selected, change, editContext);
     if (!result) {
-      toast({ title: "Can't play that", description: 'That note does not fit on this string or neck.' });
+      toast({ title: "Can't play that", description: unplayable(change, selectedNote) });
       return;
     }
     setHistory((h) => [...h.slice(-99), notes]);
-    setSelected(result.location);
+    // Select the note again where the new arrangement puts it, and play it.
+    setSelected(null);
+    setFollow(change.type === 'delete' ? null : placed.sources[0]);
     // Edits are made in the written key and stored in the recording's.
     saveNotes(shift(result.notes, -transpose));
+  };
+
+  useEffect(() => {
+    if (follow === null) return;
+    setFollow(null);
+    setSelected(locateSource(arrangement, (sources) => sources.some((k) => part.sources[k] === follow)));
+    setPreview((n) => n + 1);
+  }, [follow, arrangement, part]);
+
+  const selectNote = (location: NoteLocation) => {
+    setSelected(location);
+    setPreview((n) => n + 1);
+  };
+
+  // A drag moves a note by semitones and by steps of the rhythmic grid (a sixteenth in 4/4).
+  const slotsPerBar = meter.beatsPerBar * meter.slotsPerBeat;
+  const dragSteps = (drag: NoteDrag) => Math.round(drag.bars * slotsPerBar);
+  const describeDrag = (_location: NoteLocation, drag: NoteDrag) => {
+    if (!selectedNote) return '';
+    const steps = dragSteps(drag);
+    const slot = SLOT_NAMES[String(meter.quartersPerBeat / meter.slotsPerBeat)] ?? 'step';
+    const when = steps === 0 ? '' : ` · ${Math.abs(steps)} ${slot}${Math.abs(steps) > 1 ? 's' : ''} ${steps > 0 ? 'later' : 'earlier'}`;
+    return `${pitchName(selectedNote.pitch + drag.semitones)}${when}`;
+  };
+  const dragNote = (location: NoteLocation, drag: NoteDrag) => {
+    const steps = dragSteps(drag);
+    if (drag.semitones === 0 && steps === 0) return;
+    const { barTimes } = arrangement;
+    const barSeconds = (barTimes[location.bar + 1] ?? barTimes[location.bar]) - barTimes[location.bar];
+    edit({ type: 'move', semitones: drag.semitones, seconds: (steps * barSeconds) / slotsPerBar });
   };
 
   const undo = () => {
@@ -265,8 +318,8 @@ const ProjectEditor = ({ project }: { project: Project }) => {
       }
       if (!selected || !selectedNote) return;
       if (e.key === 'Delete' || e.key === 'Backspace') edit({ type: 'delete' });
-      else if (e.key === 'ArrowUp' && e.altKey) edit({ type: 'string', string: selected.string + 1 });
-      else if (e.key === 'ArrowDown' && e.altKey) edit({ type: 'string', string: selected.string - 1 });
+      else if (e.key === 'ArrowUp' && e.altKey) edit({ type: 'string', string: selected.string + 1, keep: 'pitch' });
+      else if (e.key === 'ArrowDown' && e.altKey) edit({ type: 'string', string: selected.string - 1, keep: 'pitch' });
       else if (e.key === 'ArrowUp') edit({ type: 'pitch', delta: 1 });
       else if (e.key === 'ArrowDown') edit({ type: 'pitch', delta: -1 });
       else if (e.key === 'Escape') setSelected(null);
@@ -569,8 +622,11 @@ const ProjectEditor = ({ project }: { project: Project }) => {
         // The recording cannot follow a transposed part.
         media={transpose ? null : media}
         mediaOffset={arrangement.startTime}
-        onNoteClick={editing ? setSelected : undefined}
+        onNoteClick={editing ? selectNote : undefined}
         selected={editing ? selected : null}
+        onNoteDrag={editing ? dragNote : undefined}
+        dragLabel={describeDrag}
+        previewKey={preview}
         controls={
           <Toggle
             pressed={editing}
@@ -588,7 +644,9 @@ const ProjectEditor = ({ project }: { project: Project }) => {
           editing && (
             <>
               {!selectedNote && (
-                <span className="text-sm text-muted-foreground">Click a note in the score to change or delete it.</span>
+                <span className="text-sm text-muted-foreground">
+                  Click a note to change or delete it. Drag it up or down to change the note, left or right to move it in time.
+                </span>
               )}
               {selected && selectedNote && (
                 <div className="flex flex-wrap items-center gap-3 text-sm" aria-label="Selected note">
@@ -612,12 +670,12 @@ const ProjectEditor = ({ project }: { project: Project }) => {
                     }}
                   />
                   <Label htmlFor="note-string" className="text-muted-foreground">String</Label>
-                  <Select value={String(selected.string)} onValueChange={(value) => edit({ type: 'string', string: Number(value) })}>
-                    <SelectTrigger id="note-string" className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
+                  <Select value={String(selected.string)} onValueChange={(value) => edit({ type: 'string', string: Number(value), keep: 'fret' })}>
+                    <SelectTrigger id="note-string" className="h-9 w-[150px]" title="The same fret on another string (Alt+↑/↓: the same note on another string)"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {tuning.strings.map((open, string) => (
                         <SelectItem key={string} value={String(string)}>
-                          {STRING_NAMES[tuning.strings.length - 1 - string] ?? `${tuning.strings.length - string}th`} ({pitchName(open + capo).replace(/\d+$/, '')})
+                          {stringName(string, tuning.strings.length)} ({pitchName(open + capo).replace(/\d+$/, '')})
                         </SelectItem>
                       ))}
                     </SelectContent>
