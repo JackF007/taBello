@@ -198,6 +198,15 @@ export function registerIpcHandlers(isTrustedUrl: (url: string) => boolean): voi
     });
   });
 
+  handle(IpcChannels.transcribeProjectAgain, async (event, projectId: unknown, instrument: unknown): Promise<IpcResult<ProjectSummary>> => {
+    const project = typeof projectId === 'string' ? await projects.getProject(projectId) : null;
+    if (!project || !isInstrumentId(instrument)) return fail('invalid', 'Unknown project.');
+    if (!project.sourceAvailable) return fail('not-found', 'The recording of this tab was moved or deleted, so TaBello cannot listen to it again.');
+    // Isolated like the first time, if the model is still there.
+    const isolate = project.isolated === true && (await modelKeeper().status()).installed;
+    return runTranscription(event, { inputPath: project.sourcePath, instrument, sensitivity: 'normal', isolate, title: project.title });
+  });
+
   handle(IpcChannels.separationModelStatus, () => modelKeeper().status());
 
   handle(IpcChannels.downloadSeparationModel, async (): Promise<IpcResult<SeparationModelStatus>> => {

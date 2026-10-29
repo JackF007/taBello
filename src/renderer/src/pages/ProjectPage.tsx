@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Download, Loader2, Pencil, Plus, RotateCcw, Sparkles, Timer, Trash2, Undo2 } from 'lucide-react';
 import InstrumentIcon from '@/components/InstrumentIcon';
 import ScoreView from '@/components/ScoreView';
+import SwitchPartDialog from '@/components/SwitchPartDialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -27,7 +28,7 @@ import { toGuitarPro } from '@/lib/music/guitarPro';
 import { clickBarPhase, clickGrid, detectTempoChanges } from '@/lib/music/tempo';
 import { alphaTexPitch, detectKey, detectMeter, estimateTempo, makeKey } from '@/lib/music/theory';
 import { MAX_TRANSPOSE, projectMediaUrl, type PartId, type ExportFormat, type NoteEvent, type Project, type ProjectSettings } from '../../../shared/ipc';
-import { getTuning, INSTRUMENTS, MAX_CAPO, type InstrumentId } from '../../../shared/instruments';
+import { getTuning, INSTRUMENTS, MAX_CAPO, samePart, type InstrumentId } from '../../../shared/instruments';
 import { METERS, type MeterId } from '../../../shared/meters';
 
 const EXPORTS: { format: ExportFormat; label: string; use: string }[] = [
@@ -99,6 +100,8 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const [history, setHistory] = useState<NoteEvent[][]>([]);
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<NoteLocation | null>(null);
+  // An instrument of another part, waiting for the user to have it transcribed.
+  const [otherPart, setOtherPart] = useState<InstrumentId | null>(null);
   const [media, setMedia] = useState<HTMLMediaElement | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -343,14 +346,25 @@ const ProjectEditor = ({ project }: { project: Project }) => {
               value={settings.instrument}
               onValueChange={(value) => {
                 const id = value as InstrumentId;
-                updateSettings({ ...settings, instrument: id, tuningId: null, capo: null });
+                // Guitar and ukulele: the same notes, written for the other neck. The bass: its own part.
+                if (samePart(settings.instrument, id)) updateSettings({ ...settings, instrument: id, tuningId: null, capo: null });
+                else setOtherPart(id);
               }}
             >
               <SelectTrigger id="instrument" className="w-[150px]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {Object.values(INSTRUMENTS).map((i) => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
+                {Object.values(INSTRUMENTS).map((i) =>
+                  samePart(settings.instrument, i.id) ? (
+                    <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
+                  ) : (
+                    <SelectItem key={i.id} value={i.id} disabled={!project.sourceAvailable}>
+                      {i.name} · {project.sourceAvailable ? 'transcribe' : 'needs the recording'}
+                    </SelectItem>
+                  ),
+                )}
               </SelectContent>
             </Select>
+            <SwitchPartDialog project={project} from={settings.instrument} to={otherPart} onClose={() => setOtherPart(null)} />
           </Field>
 
           <Field label="Part" htmlFor="part">

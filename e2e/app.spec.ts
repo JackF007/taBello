@@ -130,11 +130,11 @@ test('transcribes a video into a playable, exportable score', async () => {
   await expect(page.getByRole('button', { name: 'Restore detected notes' })).toBeHidden();
   await page.getByRole('button', { name: 'Edit notes' }).click();
 
-  // Changing settings re-renders the score.
+  // Changing settings re-renders the score; the guitar's notes are written for the ukulele at once.
   await page.getByRole('button', { name: '2×' }).click();
   await page.locator('#instrument').click();
-  await page.getByRole('option', { name: 'Bass' }).click();
-  await expect(page.locator('#tuning')).toContainText('E A D G)');
+  await page.getByRole('option', { name: 'Ukulele' }).click();
+  await expect(page.locator('#tuning')).toContainText('(G C E A)');
 
   // Export with the native save dialog stubbed out.
   const target = path.join(dir, 'export.gp');
@@ -215,14 +215,26 @@ test('transcribes a bundled sample', async () => {
   await page.getByRole('option', { name: 'Everything' }).click();
 });
 
-test('transcribes a band sample for the instrument chosen', async () => {
-  for (const instrument of ['Guitar', 'Bass']) {
-    await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
-    await page.getByRole('radio', { name: instrument }).click();
-    await page.getByRole('button', { name: 'Try When the Saints Go Marching In' }).click();
-    await page.waitForURL(/#\/project\//, { timeout: 120_000 });
-    await expect(page.locator('#instrument')).toContainText(instrument);
-  }
+test('transcribes a band sample for the instrument chosen, and its bass on demand', async () => {
+  await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
+  await page.getByRole('radio', { name: 'Guitar' }).click();
+  await page.getByRole('button', { name: 'Try When the Saints Go Marching In' }).click();
+  await page.waitForURL(/#\/project\//, { timeout: 120_000 });
+  await expect(page.locator('#instrument')).toContainText('Guitar');
+  const guitarUrl = page.url();
+
+  // The bass plays another part: the recording is heard again, into a new project.
+  await page.locator('#instrument').click();
+  await page.getByRole('option', { name: /Bass · transcribe/ }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Transcribe the bass?');
+  await dialog.getByRole('button', { name: 'Transcribe the bass' }).click();
+  await expect.poll(() => page.url(), { timeout: 120_000 }).not.toBe(guitarUrl);
+  await expect(page.locator('#instrument')).toContainText('Bass');
+  await expect(page.locator('#tuning')).toContainText('E A D G)');
+  // The guitar tab is still in the library.
+  await page.getByRole('link', { name: 'Library' }).first().click();
+  await expect(page.getByRole('link', { name: 'Open When the Saints Go Marching In' })).toHaveCount(2);
 });
 
 test('isolates the bass of the band sample', async () => {
