@@ -31,6 +31,7 @@ const IsolateControl = ({ instrumentName, checked, onCheckedChange, disabled }: 
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const download = model?.downloading ? (model.progress ?? 0) : null;
 
   const installed = (status: SeparationModelStatus) => {
@@ -55,6 +56,7 @@ const IsolateControl = ({ instrumentName, checked, onCheckedChange, disabled }: 
   };
 
   const remove = async () => {
+    setConfirmRemove(false);
     queryClient.setQueryData(['separation-model'], await requireApi().deleteSeparationModel());
     onCheckedChange(false);
   };
@@ -90,10 +92,38 @@ const IsolateControl = ({ instrumentName, checked, onCheckedChange, disabled }: 
         </div>
       )}
       {model?.installed && (
-        <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground" onClick={() => void remove()} disabled={disabled} title="Delete the separation model to free disk space">
-          <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove model ({megabytes(model.sizeBytes)})
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto text-muted-foreground"
+          onClick={() => setConfirmRemove(true)}
+          disabled={disabled}
+          title="Demucs, the AI model that isolates an instrument: delete it to free disk space"
+        >
+          <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove the separation model ({megabytes(model.sizeBytes)})
         </Button>
       )}
+
+      <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove the separation model?</DialogTitle>
+            <DialogDescription>
+              This deletes Demucs, the AI model (by Meta) that isolates an instrument from a band recording, and frees
+              {model && ` ${megabytes(model.sizeBytes)}`}. Your transcriptions stay. TaBello still writes tabs; only <em>Isolate</em>{' '}
+              stops working until you download the model again, which TaBello then no longer does by itself.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setConfirmRemove(false)}>
+              Keep it
+            </Button>
+            <Button variant="destructive" onClick={() => void remove()}>
+              <Trash2 className="h-4 w-4 mr-1" /> Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => download === null && setDialogOpen(open)}>
         <DialogContent>

@@ -30,6 +30,8 @@ check for new versions, which you can turn off.)
 - **Isolate the instrument from a band recording** (optional): Demucs, a state-of-the-art source
   separation model, extracts the bass or guitar part before transcription — still on your computer.
   TaBello downloads it by itself the first time it starts (about 100 MB, once), so it is ready.
+  *How TaBello listens*, on the Transcribe page, explains in plain words which AI models are used and
+  what each one does.
 - **Clean results**: string overtones, echoes of ringing notes and the pre-echo of a pick are left out;
   strings picked again while they still ring become new notes.
 
@@ -135,9 +137,10 @@ You can also run TaBello from source (see [Development](#development)).
      recording while the cursor follows the score;
    - drag over bars to select them and press **Loop** to practice a passage; lower the **Speed** to
      slow it down (the recording keeps its pitch);
-   - turn on **Edit notes** and click a note to fix it: type a fret, use ↑/↓ for semitones, Alt+↑/↓ to
-     move it to another string, Delete to remove it, Ctrl+Z to undo. *Restore detected notes* brings
-     back the original transcription.
+   - turn on **Edit notes** and click a note to fix it (you hear it as it changes): **drag it** up or
+     down to change the note, left or right to move it in time; or type a fret, pick a string (the same
+     fret on another string), use ↑/↓ for semitones, Alt+↑/↓ for the same note on another string,
+     Delete to remove it, Ctrl+Z to undo. *Restore detected notes* brings back the original transcription.
 4. **Export** to Guitar Pro or MIDI to keep editing in your favorite program (the menu says what each
    format is for).
 
