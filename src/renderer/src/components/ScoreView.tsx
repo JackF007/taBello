@@ -20,6 +20,15 @@ interface ScoreViewProps {
   onNoteClick?: (location: NoteLocation) => void;
   /** Note to highlight. */
   selected?: NoteLocation | null;
+  /**
+   * When set, a note can be dragged: up or down (semitones), left or right (in bars, a fraction of
+   * the width of its bar). Called on release.
+   */
+  onNoteDrag?: (location: NoteLocation, drag: NoteDrag) => void;
+  /** What a drag in progress would do, shown next to the pointer. */
+  dragLabel?: (location: NoteLocation, drag: NoteDrag) => string;
+  /** Changing this plays the selected note (after an edit, to hear it). */
+  previewKey?: number;
   /** Extra controls for the transport bar. */
   controls?: ReactNode;
   /** An extra toolbar row below the transport bar. */
@@ -27,6 +36,15 @@ interface ScoreViewProps {
 }
 
 type Source = 'synth' | 'original';
+
+export interface NoteDrag {
+  semitones: number;
+  bars: number;
+}
+
+/** Pixels of vertical drag per semitone, and before a press becomes a drag. */
+const PX_PER_SEMITONE = 8;
+const DRAG_THRESHOLD = 5;
 
 const SPEEDS = ['0.5', '0.75', '1'];
 
@@ -65,7 +83,7 @@ interface Box {
  * Renders notation and tablature with alphaTab and plays it back, either with the bundled soundfont
  * or by following the original recording (cursor in sync, same speed and loop controls).
  */
-const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected = null, controls, toolbar }: ScoreViewProps) => {
+const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected = null, onNoteDrag, dragLabel, previewKey, controls, toolbar }: ScoreViewProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<AlphaTabApi | null>(null);
@@ -79,6 +97,7 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
   const [speed, setSpeed] = useState('1');
   const [error, setError] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<Box[]>([]);
+  const [dragTip, setDragTip] = useState<{ x: number; y: number; text: string } | null>(null);
 
   // Latest values for alphaTab callbacks, which are registered once per player.
   const texRef = useRef(tex);
@@ -87,6 +106,10 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
   offsetRef.current = mediaOffset;
   const noteClickRef = useRef(onNoteClick);
   noteClickRef.current = onNoteClick;
+  const dragRef = useRef({ onNoteDrag, dragLabel });
+  dragRef.current = { onNoteDrag, dragLabel };
+  /** Where the pointer went down, and the note pressed there (with its bar's width), if any. */
+  const pressRef = useRef<{ x: number; y: number; note?: { location: NoteLocation; barWidth: number }; dragging?: boolean } | null>(null);
   const loadedTexRef = useRef<string | null>(null);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
@@ -157,7 +180,10 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     api.playerStateChanged.on((e) => setIsPlaying(e.state === synth.PlayerState.Playing));
     api.playbackRangeChanged.on((e) => setHasRange(e.playbackRange !== null));
     api.noteMouseDown.on((note) => {
-      noteClickRef.current?.({ bar: note.beat.voice.bar.index, beat: note.beat.index, string: note.string - 1, voice: note.beat.voice.index });
+      const location = { bar: note.beat.voice.bar.index, beat: note.beat.index, string: note.string - 1, voice: note.beat.voice.index };
+      noteClickRef.current?.(location);
+      const barWidth = api.boundsLookup?.findBeat(note.beat)?.barBounds.masterBarBounds.visualBounds.w ?? 0;
+      if (pressRef.current && barWidth > 0) pressRef.current.note = { location, barWidth };
     });
     api.error.on((e) => {
       console.error('alphaTab error', e);
@@ -217,6 +243,67 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     loadedTexRef.current = tex;
     api.tex(tex);
   }, [tex]);
+
+  // While notes are edited, a drag moves a note instead of selecting bars to loop.
+  const editing = !!onNoteClick;
+  const draggable = !!onNoteDrag;
+  useEffect(() => {
+    const api = apiRef.current;
+    if (api) api.settings.player.enableUserInteraction = !editing;
+  }, [editing, source]);
+
+  // Plays the selected note, to hear an edit.
+  useEffect(() => {
+    const api = apiRef.current;
+    const location = selectedRef.current;
+    if (!previewKey || !api || !location || source !== 'synth' || !isPlayerReady) return;
+    const beat = api.score?.tracks[0]?.staves[0]?.bars[location.bar]?.voices[location.voice ?? 0]?.beats[location.beat];
+    const note = beat?.notes.find((n) => n.string - 1 === location.string);
+    if (note) api.playNote(note);
+    // Only a new key plays: not a change of selection or player.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey]);
+
+  // Dragging a note: the pointer is followed on the whole window, so the drag can leave the score.
+  useEffect(() => {
+    if (!draggable) return;
+    const container = containerRef.current;
+    const measure = (e: PointerEvent): NoteDrag | null => {
+      const press = pressRef.current;
+      if (!press?.note) return null;
+      const dx = e.clientX - press.x;
+      const dy = e.clientY - press.y;
+      if (!press.dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) return null;
+      press.dragging = true;
+      return { semitones: -Math.round(dy / PX_PER_SEMITONE), bars: dx / press.note.barWidth };
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.button === 0) pressRef.current = { x: e.clientX, y: e.clientY };
+    };
+    const onMove = (e: PointerEvent) => {
+      const drag = measure(e);
+      const press = pressRef.current;
+      if (!drag || !press?.note) return;
+      const text = dragRef.current.dragLabel?.(press.note.location, drag) ?? '';
+      setDragTip({ x: e.clientX, y: e.clientY, text });
+    };
+    const onUp = (e: PointerEvent) => {
+      const drag = measure(e);
+      const press = pressRef.current;
+      pressRef.current = null;
+      setDragTip(null);
+      if (drag && press?.note) dragRef.current.onNoteDrag?.(press.note.location, drag);
+    };
+    // Capture: the press is known before alphaTab reports the note under it.
+    container?.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      container?.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [draggable]);
 
   // Space bar plays and pauses, unless typing or using a control.
   useEffect(() => {
@@ -349,7 +436,8 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
           </div>
         )}
         <div className="relative">
-          <div ref={containerRef} className={`min-h-[300px] ${onNoteClick ? 'cursor-pointer' : ''}`} />
+          {/* While editing, a drag moves a note: no text selection. */}
+          <div ref={containerRef} className={`min-h-[300px] ${onNoteClick ? 'cursor-pointer select-none' : ''}`} />
           {highlights.map((box, i) => (
             <div
               key={i}
@@ -361,6 +449,16 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
           ))}
         </div>
       </div>
+      {dragTip && (
+        <div
+          role="status"
+          data-testid="drag-tip"
+          className="pointer-events-none fixed z-50 rounded-md border border-gh-yellow bg-card px-2 py-1 text-xs font-semibold text-gh-yellow shadow-lg"
+          style={{ left: dragTip.x + 14, top: dragTip.y - 30 }}
+        >
+          {dragTip.text}
+        </div>
+      )}
     </div>
   );
 };

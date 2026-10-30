@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck } from 'lucide-react';
+import AboutAi from '@/components/AboutAi';
 import FeatureGrid from '@/components/FeatureGrid';
 import InstrumentPicker from '@/components/InstrumentPicker';
 import IsolateControl from '@/components/IsolateControl';
@@ -126,6 +127,7 @@ const TranscribePage = () => {
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+          <AboutAi className="ml-auto text-muted-foreground" />
         </div>
 
         <IsolateControl

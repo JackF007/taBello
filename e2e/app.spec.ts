@@ -120,6 +120,15 @@ test('transcribes a video into a playable, exportable score', async () => {
   await expect(page.locator('#note-fret')).toHaveValue(String(fret + 1));
   // The edited note stays selected in both the notation and the tablature.
   await expect(page.getByTestId('selected-note')).toHaveCount(2);
+  // Drag the note up two semitones: the score shows what it becomes, and it stays selected.
+  const head = (await page.getByTestId('selected-note').first().boundingBox())!;
+  await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2 - 17, { steps: 5 });
+  await expect(page.getByTestId('drag-tip')).toBeVisible();
+  await page.mouse.up();
+  await expect(page.locator('#note-fret')).toHaveValue(String(fret + 3));
+  await expect(page.getByTestId('selected-note')).toHaveCount(2);
   const noteCount = async () => Number((await page.getByText(/· \d+ notes ·/).textContent())!.match(/(\d+) notes/)![1]);
   const before = await noteCount();
   await page.getByRole('button', { name: 'Delete note' }).click();
@@ -252,9 +261,18 @@ test('isolates the bass of the band sample', async () => {
 
 test('offers to download the separation model', async () => {
   await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
-  const remove = page.getByRole('button', { name: /Remove model/ });
+  // What the AI is, in plain words.
+  await page.getByRole('button', { name: 'How TaBello listens' }).click();
+  const about = page.getByRole('dialog');
+  await expect(about).toContainText('Basic Pitch');
+  await expect(about).toContainText('Demucs');
+  await about.getByRole('button', { name: 'Close' }).click();
+  await expect(about).toBeHidden();
+
+  const remove = page.getByRole('button', { name: /Remove the separation model/ });
   if (await remove.isVisible()) {
     await remove.click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
     await expect(remove).toBeHidden();
   }
   await page.locator('#isolate').click();
