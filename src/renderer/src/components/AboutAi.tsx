@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AudioWaveform, Brain, Layers, Music, ShieldCheck } from 'lucide-react';
+import { AudioWaveform, Brain, Hand, Layers, Music, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useSeparationModel } from '@/lib/separationModel';
@@ -32,7 +32,7 @@ const AboutAi = ({ className }: { className?: string }) => {
         <DialogHeader>
           <DialogTitle>How TaBello listens</DialogTitle>
           <DialogDescription>
-            Two AI models, both running on your computer. Your recordings are never uploaded, and nothing learns from them.
+            Three AI models, all running on your computer. Your recordings are never uploaded, and nothing learns from them.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -52,6 +52,12 @@ const AboutAi = ({ className }: { className?: string }) => {
               {model?.installed
                 ? 'Installed. Removing it frees the space; Isolate then asks to download it again.'
                 : 'Not installed: turning Isolate on offers to download it.'}
+            </p>
+          </Model>
+          <Model icon={<Hand className="h-4 w-4" />} title="MediaPipe Hands" by="Google, Apache-2.0">
+            <p className="text-muted-foreground">
+              In a video, finds the hand on the frets (in close-ups of the neck), so each note is written where it is played on
+              the neck, not only where it is easiest. It is part of TaBello (8 MB) and looks at each video once.
             </p>
           </Model>
           <Model icon={<Music className="h-4 w-4" />} title="The music, without AI" by="TaBello">

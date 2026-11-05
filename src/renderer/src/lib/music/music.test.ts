@@ -91,6 +91,23 @@ describe('arrange', () => {
     expect(bar.map((b) => [b.notes[0].string, b.notes[0].fret])).toEqual([[0, 0], [1, 0], [2, 0], [3, 0]]);
   });
 
+  it('places notes where the video shows the fretting hand', () => {
+    // A3 and C4: 2nd fret of the G string and 1st of the B string, or 7th and 10th of the D string.
+    const notes = [note(0.01, 57, 0.45), note(0.51, 60, 0.45)];
+    const placed = (options: ArrangeOptions) => bars(notes, options)[0].flatMap((b) => b.notes.map((n) => [n.string, n.fret]));
+    expect(placed(at120)).toEqual([[3, 2], [4, 1]]);
+    const handAt7 = [{ time: 0, low: 7, high: 9 }, { time: 0.5, low: 7, high: 9 }];
+    expect(placed({ ...at120, handWindows: handAt7 })).toEqual([[2, 7], [2, 10]]);
+    // Seen long before or after, the hand says nothing about these notes.
+    expect(placed({ ...at120, handWindows: [{ time: 5, low: 7, high: 9 }] })).toEqual([[3, 2], [4, 1]]);
+    // With a capo on the 2nd fret, the hand seen at the 9th–11th frets is at 7–9 above it: B3 there
+    // is the D string's 7th fret above the capo, not the G string's 2nd.
+    const b3 = [note(0.01, 59, 0.45)];
+    const capo2 = (handWindows?: ArrangeOptions['handWindows']) => bars(b3, { ...at120, capo: 2, handWindows })[0][0].notes.map((n) => [n.string, n.fret]);
+    expect(capo2()).toEqual([[3, 2]]);
+    expect(capo2([{ time: 0, low: 9, high: 11 }])).toEqual([[2, 7]]);
+  });
+
   it('plays an open E major chord in first position', () => {
     const eMajor = [40, 47, 52, 56, 59, 64].map((p) => note(0, p, 2));
     const [[beat]] = bars(eMajor);

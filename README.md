@@ -30,6 +30,11 @@ check for new versions, which you can turn off.)
 - **Isolate the instrument from a band recording** (optional): Demucs, a state-of-the-art source
   separation model, extracts the bass or guitar part before transcription — still on your computer.
   TaBello downloads it by itself the first time it starts (about 100 MB, once), so it is ready.
+- **Watches the hand in videos**: in close-ups of the neck, MediaPipe's hand model and TaBello's own
+  fretboard detection see which frets the fingers are on, and the notes are written there (the same
+  note can be played in several places on the neck; the sound alone cannot tell which). It runs by
+  itself the first time a video project opens, on your computer; *Hand from the video* turns it off.
+  It needs 3D graphics (WebGL); MediaPipe's own usage statistics are blocked, so nothing is sent.
   *How TaBello listens*, on the Transcribe page, explains in plain words which AI models are used and
   what each one does.
 - **Clean results**: string overtones, echoes of ringing notes and the pre-echo of a pick are left out;

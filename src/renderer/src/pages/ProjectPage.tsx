@@ -19,6 +19,7 @@ import { Toggle } from '@/components/ui/toggle';
 import { useToast } from '@/hooks/use-toast';
 import { requireApi } from '@/lib/api';
 import { useMenuMusic } from '@/lib/menuMusic';
+import { useHandVision } from '@/lib/vision/useHandVision';
 import { formatDate, formatDuration, isVideoFile } from '@/lib/format';
 import { arrange, detectCapo, detectTuning } from '@/lib/music/arrange';
 import { applyEdit, findNote, locateSource, type NoteEdit, type NoteLocation } from '@/lib/music/edit';
@@ -180,9 +181,12 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const transposeBy = (step: number) =>
     updateSettings({ ...settings, transpose: transpose + step, capo: sameShapes ? capo + step : settings.capo });
 
+  // The fretting hand seen in the video (watched once, in the background) guides where notes go.
+  const hand = useHandVision(project);
+  const handWindows = settings.videoHand && hand.state === 'done' && hand.vision.windows.length > 0 ? hand.vision.windows : undefined;
   const arrangement = useMemo(
-    () => arrange(part.notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo, techniques: settings.techniques }),
-    [part, instrument, tuning, timing, capo, settings.techniques],
+    () => arrange(part.notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo, techniques: settings.techniques, handWindows }),
+    [part, instrument, tuning, timing, capo, settings.techniques, handWindows],
   );
   const tex = useMemo(
     () => toAlphaTex(arrangement, { title: project.title, bpm, key: shownKey, instrument, tuning: tuning.strings, capo, chords: settings.chords }),
@@ -576,6 +580,41 @@ const ProjectEditor = ({ project }: { project: Project }) => {
           >
             Tempo changes
           </Option>
+
+          {hand.state === 'watching' && (
+            <span className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm text-muted-foreground" role="status" data-testid="hand-vision">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Watching the hand in the video · {Math.round(hand.progress * 100)}%
+            </span>
+          )}
+          {hand.state === 'done' && hand.vision.windows.length > 0 && (
+            <Option
+              pressed={settings.videoHand}
+              onPressedChange={(videoHand) => updateSettings({ ...settings, videoHand })}
+              label="Hand from the video"
+              title={`The fretting hand was seen on the neck at ${hand.vision.windows.length} moments of the video (frets ${Math.min(...hand.vision.windows.map((w) => w.low))}–${Math.max(...hand.vision.windows.map((w) => w.high))}): notes are written where it plays. Watched on your computer by MediaPipe's hand model.`}
+            >
+              Hand from the video
+            </Option>
+          )}
+          {hand.state === 'failed' && (
+            <span
+              className="rounded-full border px-3 py-1.5 text-sm text-muted-foreground"
+              title="Watching the hand needs 3D graphics (WebGL), which this computer does not offer to TaBello: the notes are placed from the sound alone"
+              data-testid="hand-vision"
+            >
+              Could not watch the hand in the video
+            </span>
+          )}
+          {hand.state === 'done' && hand.vision.windows.length === 0 && (
+            <span
+              className="rounded-full border px-3 py-1.5 text-sm text-muted-foreground"
+              title="TaBello looks for the fretting hand in videos, to write the notes where it plays: it needs close-ups of the neck"
+              data-testid="hand-vision"
+            >
+              No close-up of the hand in the video
+            </span>
+          )}
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {metronomeBeats && (
