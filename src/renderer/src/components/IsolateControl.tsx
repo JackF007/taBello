@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, FolderOpen, Layers, Loader2, RotateCw, Trash2 } from 'lucide-react';
+import { Download, FolderOpen, Info, Layers, Loader2, RotateCw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { requireApi } from '@/lib/api';
 import { useSeparationModel } from '@/lib/separationModel';
@@ -92,16 +93,32 @@ const IsolateControl = ({ instrumentName, checked, onCheckedChange, disabled }: 
         </div>
       )}
       {model?.installed && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto text-muted-foreground"
-          onClick={() => setConfirmRemove(true)}
-          disabled={disabled}
-          title="Demucs, the AI model that isolates an instrument: delete it to free disk space"
-        >
-          <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove the separation model ({megabytes(model.sizeBytes)})
-        </Button>
+        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0} className="inline-flex cursor-help items-center gap-1.5 rounded-full border px-2.5 py-1" data-testid="model-info">
+                <Layers className="h-3.5 w-3.5 text-gh-yellow" /> Demucs, the AI that isolates instruments
+                <Info className="h-3.5 w-3.5" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs text-sm leading-snug">
+              Demucs (by Meta) is the AI model behind <em>Isolate</em>: it splits a band recording into drums, bass, vocals and the
+              rest, so the instrument you chose is transcribed alone. It runs on your computer and takes{' '}
+              {megabytes(model.sizeBytes)}. Removing it frees that space; your tabs stay, only <em>Isolate</em> stops until you
+              download it again.
+            </TooltipContent>
+          </Tooltip>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => setConfirmRemove(true)}
+            disabled={disabled}
+            aria-label={`Remove Demucs (${megabytes(model.sizeBytes)})`}
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove ({megabytes(model.sizeBytes)})
+          </Button>
+        </div>
       )}
 
       <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>
