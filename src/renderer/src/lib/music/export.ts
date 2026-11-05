@@ -348,7 +348,10 @@ export function toAlphaTex(arrangement: Arrangement, header: ScoreHeader): strin
     ...(instrument.id === 'ukulele' ? ['\\displaytranspose 0'] : []),
     `\\ts ${meter.numerator} ${meter.denominator}`,
     `\\ks ${key.alphaTex}`,
-    ...[...diagrams.values()].map((d) => `\\chord (${quote(d.name)} ${d.frets.map((f) => f ?? 'x').join(' ')})`),
+    // A chord with no playable shape keeps its name above the staff, without an empty diagram.
+    ...[...diagrams.values()]
+      .filter((d) => d.frets.some((f) => f !== null))
+      .map((d) => `\\chord (${quote(d.name)} ${d.frets.map((f) => f ?? 'x').join(' ')})`),
     // With a bass voice, each voice is written in full after a \\voice marker.
     ...(arrangement.bass ? ['\\voice'] : []),
     arrangement.bars

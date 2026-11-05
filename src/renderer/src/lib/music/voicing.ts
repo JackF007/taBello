@@ -17,7 +17,9 @@ const pc = (pitch: number) => ((pitch % 12) + 12) % 12;
 
 /** Frets from the lowest string up, null for a muted string; null when no playable shape exists. */
 export function chordVoicing({ root, intervals, bass, tuning, frets }: VoicingRequest): (number | null)[] | null {
-  const tones = intervals.map((i) => (root + i) % 12);
+  const chordTones = intervals.map((i) => (root + i) % 12);
+  // A slash bass outside the chord (the D of Em/D) is played too, under it.
+  const tones = bass >= 0 && !chordTones.includes(bass) ? [...chordTones, bass] : chordTones;
   // Every tone must be heard except the perfect fifth, which chord shapes often leave out.
   const fifth = intervals.includes(7) ? (root + 7) % 12 : -1;
   const required = tones.filter((t) => t !== fifth);
