@@ -16,6 +16,8 @@ source checkout.
 | [Basic Pitch](https://github.com/spotify/basic-pitch-ts) — code **and model weights** | 1.0.1 | Apache-2.0 | Spotify AB |
 | [TensorFlow.js](https://github.com/tensorflow/tfjs) — core, converter, WebAssembly backend | 4.22.0 | Apache-2.0 | Google LLC |
 | [ONNX Runtime Web](https://onnxruntime.ai/) (WebAssembly build, runs the separation model) | 1.23.2 | MIT | Microsoft Corporation |
+| [MediaPipe Tasks Vision](https://github.com/google-ai-edge/mediapipe) (WebAssembly build, watches the fretting hand in videos) | 1.2.0 | Apache-2.0 | Google LLC |
+| MediaPipe Hand Landmarker model `hand_landmarker.task` ([model card](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Hand%20Tracking%20(Lite_Full)%20with%20Fairness%20Oct%202021.pdf)), unchanged | float16/1 | Apache-2.0 | Google LLC |
 | [demucs-js](https://github.com/bakkot/demucs-js) — `dsp.js` (STFT), with one fix, in `src/main/separation/demucs-js/`; separation code adapted from it | 1.0.0 | MIT | Kevin Gibbons and contributors |
 | [alphaTab](https://github.com/CoderLine/alphaTab) | 1.8.4 | MPL-2.0 | Daniel Kuschny and contributors (used unmodified) |
 | [Bravura](https://github.com/steinbergmedia/bravura) music font (shipped with alphaTab) | — | SIL OFL 1.1 | Steinberg Media Technologies GmbH |

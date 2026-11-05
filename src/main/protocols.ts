@@ -13,6 +13,7 @@ export const APP_SCHEME = 'app';
 export const APP_HOST = 'tabello';
 export const APP_URL = `${APP_SCHEME}://${APP_HOST}/index.html`;
 const RENDERER_DIR = path.join(import.meta.dirname, '../renderer');
+const APP_ORIGINS = [`${APP_SCHEME}://${APP_HOST}`, ...(process.env.ELECTRON_RENDERER_URL ? [new URL(process.env.ELECTRON_RENDERER_URL).origin] : [])];
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -39,7 +40,8 @@ const MEDIA_TYPES: Record<string, string> = {
 export function registerSchemes(): void {
   protocol.registerSchemesAsPrivileged([
     { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
-    { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+    // CORS: the app may read video frames (to watch the fretting hand), which needs the media to allow it.
+    { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
   ]);
 }
 
@@ -83,6 +85,9 @@ function handleMediaRequest(): void {
       'Content-Type': MEDIA_TYPES[path.extname(sourcePath).toLowerCase()] ?? 'application/octet-stream',
       'Accept-Ranges': 'bytes',
     });
+    // Only TaBello's own pages may read the frames (in development, the dev server's).
+    const origin = request.headers.get('origin');
+    if (origin && APP_ORIGINS.includes(origin)) headers.set('Access-Control-Allow-Origin', origin);
 
     const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') ?? '');
     let start = 0;

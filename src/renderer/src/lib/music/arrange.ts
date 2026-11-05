@@ -1,6 +1,6 @@
 // Turns detected notes (real time) into a playable tablature arrangement:
 // quantize to a rhythmic grid → group into chords → pick strings/frets → split into bars.
-import type { NoteEvent } from '../../../../shared/ipc';
+import type { HandWindow, NoteEvent } from '../../../../shared/ipc';
 import type { Tuning } from '../../../../shared/instruments';
 import { METERS, type Meter, type MeterId } from '../../../../shared/meters';
 import { anchorBeat, beatGrid, constantGrid } from './tempo';
@@ -89,7 +89,15 @@ export interface ArrangeOptions {
   techniques?: boolean;
   /** Write sustained basses of fingerstyle parts in a voice of their own (default true; 6+ strings). */
   voices?: boolean;
+  /** Where the fretting hand was seen in the video, moment by moment (frets from the nut). */
+  handWindows?: HandWindow[];
 }
+
+// Per fret outside where the fretting hand was seen (with a fret to spare on each side). The audio
+// decides which notes there are; the video only says which of their places on the neck is played.
+const OUTSIDE_HAND_COST = 1;
+/** A hand seen this close in time to a note tells where it is played. */
+const HAND_SECONDS = 0.35;
 
 interface ChordPitch {
   pitch: number;
@@ -702,6 +710,23 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
       };
     });
   });
+  // Where the video shows the hand, the fingerings there.
+  const windows = [...(options.handWindows ?? [])].sort((a, b) => a.time - b.time);
+  if (windows.length > 0) {
+    const capo = options.capo ?? 0;
+    for (const entry of playable) {
+      const time = Math.min(...entry.chord.pitches.flatMap((p) => p.sources.map((k) => notes[k].start)));
+      let near: HandWindow | null = null;
+      for (const w of windows) if (Math.abs(w.time - time) <= HAND_SECONDS && (!near || Math.abs(w.time - time) < Math.abs(near.time - time))) near = w;
+      if (!near) continue;
+      const low = near.low - capo - 1;
+      const high = near.high - capo + 1;
+      entry.candidates = entry.candidates.map((c) => {
+        const outside = c.notes.reduce((sum, n) => sum + (n.fret === 0 ? 0 : Math.max(0, low - n.fret, n.fret - high)), 0);
+        return outside > 0 ? { ...c, cost: c.cost + outside * OUTSIDE_HAND_COST } : c;
+      });
+    }
+  }
   for (const entry of playable)
     for (const c of entry.candidates) {
       const bends = c.notes.flatMap((n) => {

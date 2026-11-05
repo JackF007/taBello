@@ -31,3 +31,6 @@ release
 test-results
 playwright-report
 benchmark/results
+
+# MediaPipe runtime, copied from node_modules at build time
+src/renderer/public/vision/wasm

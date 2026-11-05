@@ -262,6 +262,11 @@ export function registerIpcHandlers(isTrustedUrl: (url: string) => boolean): voi
     return summary ? { ok: true, value: summary } : fail('not-found', 'This project no longer exists.');
   });
 
+  handle(IpcChannels.saveProjectVision, async (_event, id: unknown, vision: unknown): Promise<IpcResult<null>> => {
+    if (typeof id !== 'string' || !projects.isValidVision(vision)) return fail('invalid', 'Invalid hand positions.');
+    return (await projects.saveProjectVision(id, vision)) ? { ok: true, value: null } : fail('not-found', 'This project no longer exists.');
+  });
+
   handle(IpcChannels.resetProjectNotes, async (_event, id: unknown): Promise<IpcResult<NoteEvent[]>> => {
     const notes = typeof id === 'string' ? await projects.resetProjectNotes(id) : null;
     return notes ? { ok: true, value: notes } : fail('not-found', 'This project no longer exists.');

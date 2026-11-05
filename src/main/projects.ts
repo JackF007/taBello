@@ -4,7 +4,7 @@ import { app } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { MAX_NOTES, MAX_TRANSPOSE, PART_IDS, type ClickTrack, type PartId, type NoteEvent, type Project, type ProjectSettings, type ProjectSummary } from '../shared/ipc';
+import { MAX_NOTES, MAX_TRANSPOSE, PART_IDS, type ClickTrack, type HandVision, type PartId, type NoteEvent, type Project, type ProjectSettings, type ProjectSummary } from '../shared/ipc';
 import { INSTRUMENTS, isInstrumentId, MAX_CAPO, type InstrumentId } from '../shared/instruments';
 import { isMeterId } from '../shared/meters';
 
@@ -16,6 +16,7 @@ interface StoredMeta extends ProjectSummary {
 const ID_PATTERN = /^[a-f0-9]{32}$/;
 /** A metronome heard in the recording (its clicks: the beats). */
 const METRONOME = 'metronome.json';
+const VISION = 'vision.json';
 
 const isTimes = (value: unknown): value is number[] => Array.isArray(value) && value.every((t) => typeof t === 'number' && Number.isFinite(t) && t >= 0);
 function isClickTrack(value: unknown): value is ClickTrack {
@@ -70,6 +71,7 @@ function normalizeSettings(settings: Partial<ProjectSettings>): ProjectSettings 
     tempoChanges: settings.tempoChanges ?? true,
     transpose: Number.isInteger(settings.transpose) && Math.abs(settings.transpose!) <= MAX_TRANSPOSE ? settings.transpose! : 0,
     part: PART_IDS.includes(settings.part as PartId) ? settings.part! : 'all',
+    videoHand: settings.videoHand ?? true,
   };
 }
 
@@ -79,7 +81,7 @@ function toSummary({ schemaVersion: _version, sourcePath: _path, ...summary }: S
 
 export function isValidSettings(value: unknown): value is ProjectSettings {
   if (typeof value !== 'object' || value === null) return false;
-  const { instrument, tuningId, tempo, capo, meter, chords, techniques, tempoChanges, transpose, part } = value as Record<string, unknown>;
+  const { instrument, tuningId, tempo, capo, meter, chords, techniques, tempoChanges, transpose, part, videoHand } = value as Record<string, unknown>;
   return (
     isInstrumentId(instrument) &&
     (tuningId === null || INSTRUMENTS[instrument].tunings.some((t) => t.id === tuningId)) &&
@@ -91,7 +93,27 @@ export function isValidSettings(value: unknown): value is ProjectSettings {
     typeof tempoChanges === 'boolean' &&
     Number.isInteger(transpose) &&
     Math.abs(transpose as number) <= MAX_TRANSPOSE &&
-    PART_IDS.includes(part as PartId)
+    PART_IDS.includes(part as PartId) &&
+    typeof videoHand === 'boolean'
+  );
+}
+
+/** Untrusted input from the renderer: what watching the fretting hand found. */
+export function isValidVision(value: unknown): value is HandVision {
+  if (typeof value !== 'object' || value === null) return false;
+  const { version, windows, frames, closeUps } = value as Record<string, unknown>;
+  const count = (n: unknown) => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 1_000_000;
+  return (
+    version === 1 &&
+    count(frames) &&
+    count(closeUps) &&
+    Array.isArray(windows) &&
+    windows.length <= 100_000 &&
+    windows.every((w: unknown) => {
+      if (typeof w !== 'object' || w === null) return false;
+      const { time, low, high } = w as Record<string, unknown>;
+      return isFiniteNumber(time, 0, 24 * 3600) && Number.isInteger(low) && Number.isInteger(high) && (low as number) >= 1 && (low as number) <= (high as number) && (high as number) <= 24;
+    })
   );
 }
 
@@ -152,7 +174,7 @@ export async function createProject(input: {
     sourcePath: input.sourcePath,
     durationSeconds: input.durationSeconds,
     noteCount: input.notes.length,
-    settings: { instrument: input.instrument, tuningId: null, tempo: null, capo: null, meter: null, chords: true, techniques: true, tempoChanges: true, transpose: 0, part: 'all' },
+    settings: { instrument: input.instrument, tuningId: null, tempo: null, capo: null, meter: null, chords: true, techniques: true, tempoChanges: true, transpose: 0, part: 'all', videoHand: true },
     ...(input.isolated ? { isolated: true } : {}),
   };
   await writeJsonAtomic(path.join(dir, 'notes.json'), input.notes);
@@ -183,7 +205,23 @@ export async function getProject(id: string): Promise<Project | null> {
   const exists = (file: string) => access(file).then(() => true, () => false);
   const [sourceAvailable, edited] = await Promise.all([exists(meta.sourcePath), exists(path.join(dir, ORIGINAL_NOTES))]);
   const metronome = await readFile(path.join(dir, METRONOME), 'utf8').then((text) => JSON.parse(text) as unknown, () => null);
-  return { ...toSummary(meta), sourcePath: meta.sourcePath, sourceAvailable, notes, edited, ...(isClickTrack(metronome) ? { metronome } : {}) };
+  const vision = await readFile(path.join(dir, VISION), 'utf8').then((text) => JSON.parse(text) as unknown, () => null);
+  return {
+    ...toSummary(meta),
+    sourcePath: meta.sourcePath,
+    sourceAvailable,
+    notes,
+    edited,
+    ...(isClickTrack(metronome) ? { metronome } : {}),
+    ...(isValidVision(vision) ? { vision } : {}),
+  };
+}
+
+export async function saveProjectVision(id: string, vision: HandVision): Promise<boolean> {
+  const dir = projectDir(id);
+  if (!dir || !(await readMeta(dir))) return false;
+  await writeJsonAtomic(path.join(dir, VISION), vision);
+  return true;
 }
 
 export async function getProjectSourcePath(id: string): Promise<string | null> {

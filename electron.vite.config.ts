@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { defineConfig } from 'electron-vite';
@@ -30,6 +30,22 @@ function transcriptionAssets(): Plugin {
           this.emitFile({ type: 'asset', fileName: `transcription-assets/${folder}/${file}`, source: readFileSync(join(dir, file)) });
         }
       }
+    },
+  };
+}
+
+/**
+ * Copies MediaPipe's WebAssembly runtime (it watches the fretting hand in videos) into the
+ * renderer's public folder, for development and builds alike; the hand model itself is in the repo.
+ */
+function visionRuntime(): Plugin {
+  return {
+    name: 'tabello-vision-runtime',
+    buildStart() {
+      const from = join(dirname(require.resolve('@mediapipe/tasks-vision')), 'wasm');
+      const to = resolve(import.meta.dirname, 'src/renderer/public/vision/wasm');
+      mkdirSync(to, { recursive: true });
+      for (const file of ['vision_wasm_internal.js', 'vision_wasm_internal.wasm']) copyFileSync(join(from, file), join(to, file));
     },
   };
 }
@@ -75,6 +91,7 @@ export default defineConfig({
     },
     plugins: [
       react(),
+      visionRuntime(),
       // Copies alphaTab's music font and soundfont into public/assets so they ship offline.
       alphaTab({ assetOutputDir: resolve(import.meta.dirname, 'src/renderer/public/assets') }),
     ],

@@ -18,6 +18,7 @@ export const IpcChannels = {
   getProject: 'projects:get',
   updateProjectSettings: 'projects:update-settings',
   updateProjectNotes: 'projects:update-notes',
+  saveProjectVision: 'projects:save-vision',
   resetProjectNotes: 'projects:reset-notes',
   deleteProject: 'projects:delete',
   exportFile: 'export:save-file',
@@ -155,6 +156,26 @@ export interface ProjectSettings {
   transpose: number;
   /** Which part to write: everything, the melody on top (a lead guitar) or the accompaniment under it. */
   part: PartId;
+  /** Place the notes where the fretting hand is seen in the video (when there is one). */
+  videoHand: boolean;
+}
+
+/** Where the fretting hand was seen on the neck at one moment of a video: its fingertips' frets. */
+export interface HandWindow {
+  /** Seconds into the recording. */
+  time: number;
+  /** Lowest and highest fret under a fingertip (counted from the nut, capo not included). */
+  low: number;
+  high: number;
+}
+
+/** What watching a video's fretting hand found (close-ups of the neck only). */
+export interface HandVision {
+  version: 1;
+  windows: HandWindow[];
+  /** Frames looked at, and those showing the neck close enough to read. */
+  frames: number;
+  closeUps: number;
 }
 
 export interface ProjectSummary {
@@ -189,6 +210,8 @@ export interface Project extends ProjectSummary {
   edited: boolean;
   /** A metronome found in the recording. */
   metronome?: ClickTrack;
+  /** The fretting hand seen in the video, once watched. */
+  vision?: HandVision;
 }
 
 /** Upper bound on the notes a project can hold (a 15-minute recording yields a few thousand). */
@@ -241,6 +264,8 @@ export interface TabelloApi {
   updateProjectSettings(id: string, settings: ProjectSettings): Promise<IpcResult<ProjectSummary>>;
   /** Saves hand-edited notes; the notes detected by the transcription are kept for resetProjectNotes. */
   updateProjectNotes(id: string, notes: NoteEvent[]): Promise<IpcResult<ProjectSummary>>;
+  /** Keeps what watching the video's fretting hand found, so it is not watched again. */
+  saveProjectVision(id: string, vision: HandVision): Promise<IpcResult<null>>;
   /** Restores the notes detected by the transcription and returns them. */
   resetProjectNotes(id: string): Promise<IpcResult<NoteEvent[]>>;
   deleteProject(id: string): Promise<IpcResult<void>>;
