@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { analyzeArticulation, followRidge, mergeBends, pluckStrength, transientEnvelope } from './articulation';
+import { analyzeArticulation, followRidge, hammersFromBends, mergeBends, pluckStrength, transientEnvelope } from './articulation';
 import { detectNotes } from './pipeline';
 import { renderStrings, type SynthNote } from './testing/strings';
 
@@ -73,7 +73,7 @@ describe('mergeBends', () => {
       note(0.4, 0.5, 66, { attack: 0.1, slideOut: -1.8 }),
       note(0.95, 0.4, 64, { attack: 0.05 }),
     ]);
-    expect(merged).toEqual([note(0, 1.35, 64, { attack: 0.9, bend: 2, release: true })]);
+    expect(merged).toEqual([note(0, 1.35, 64, { attack: 0.9, bend: 2, bendAt: 0.4, release: true })]);
   });
 
   it('keeps picked notes and jumps without a glide', () => {
@@ -81,6 +81,26 @@ describe('mergeBends', () => {
     expect(mergeBends(picked)).toHaveLength(2);
     const hammer = [note(0, 0.3, 64, { attack: 0.9 }), note(0.3, 0.3, 66, { attack: 0 })];
     expect(mergeBends(hammer)).toHaveLength(2);
+  });
+});
+
+describe('hammersFromBends', () => {
+  const bass = { start: 0, duration: 2, pitch: 50, velocity: 0.6, attack: 0.9 };
+  const bent = { start: 0.5, duration: 0.6, pitch: 57, velocity: 0.6, attack: 0.9, bend: 2, bendAt: 0.15 };
+
+  it('reads a whole-tone rise over a ringing bass as a hammer-on', () => {
+    const notes = hammersFromBends([bass, bent]);
+    expect(notes).toHaveLength(3);
+    expect(notes[1]).toMatchObject({ start: 0.5, duration: 0.15, pitch: 57 });
+    expect(notes[1].bend).toBeUndefined();
+    expect(notes[2]).toMatchObject({ start: 0.65, pitch: 59, attack: 0 });
+    expect(notes.every((n) => n.bendAt === undefined)).toBe(true);
+  });
+
+  it('keeps bends in a single line, small bends, and bends released', () => {
+    expect(hammersFromBends([bent])[0]).toMatchObject({ bend: 2 });
+    expect(hammersFromBends([bass, { ...bent, bend: 1 }])[1]).toMatchObject({ bend: 1 });
+    expect(hammersFromBends([bass, { ...bent, release: true }])[1]).toMatchObject({ bend: 2 });
   });
 });
 

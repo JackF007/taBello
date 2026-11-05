@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { INSTRUMENTS } from '../../shared/instruments';
-import { decodeAudio, detectNotes, mergeRetriggeredNotes, PipelineError, removeHarmonics, SAMPLE_RATE } from './pipeline';
+import { decodeAudio, detectNotes, dropStrayNotes, mergeRetriggeredNotes, PipelineError, removeHarmonics, SAMPLE_RATE } from './pipeline';
 
 const require = createRequire(import.meta.url);
 // When running from source, the assets are read straight from node_modules.
@@ -96,6 +96,17 @@ describe('removeHarmonics', () => {
     expect(removeHarmonics([string, overtone])).toEqual([string]);
     // Picked as hard as the note under it: an octave played.
     expect(removeHarmonics([string, { ...overtone, onset: 0.84 }])).toHaveLength(2);
+  });
+});
+
+describe('dropStrayNotes', () => {
+  it('drops a short, quiet note alone before the music, and keeps the music', () => {
+    const music = [0, 0.5, 1, 1.5].map((t) => ({ start: 3 + t, duration: 0.1, pitch: 60, velocity: 0.3 }));
+    const click = { start: 0.5, duration: 0.09, pitch: 56, velocity: 0.34 };
+    expect(dropStrayNotes([click, ...music])).toEqual(music);
+    // Loud or long enough, a lone note is played.
+    expect(dropStrayNotes([{ ...click, velocity: 0.6 }])).toHaveLength(1);
+    expect(dropStrayNotes([{ ...click, duration: 0.5 }])).toHaveLength(1);
   });
 });
 

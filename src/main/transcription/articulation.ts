@@ -15,6 +15,8 @@ const MIN_CONTOUR = 0.3 * 255;
  * semitone or so; whether a glide is a slide is decided with the neighbouring notes (see arrange).
  */
 const MIN_GLIDE = 0.5;
+/** Shortest note that can carry a bend. */
+const MIN_BEND_SECONDS = 0.15;
 
 export interface FrameNote {
   startFrame: number;
@@ -22,7 +24,7 @@ export interface FrameNote {
   pitchMidi: number;
 }
 
-export type Articulation = Pick<NoteEvent, 'attack' | 'onset' | 'bend' | 'release' | 'slideIn' | 'slideOut' | 'vibrato'>;
+export type Articulation = Pick<NoteEvent, 'attack' | 'onset' | 'bend' | 'bendAt' | 'release' | 'slideIn' | 'slideOut' | 'vibrato'>;
 
 export interface ArticulationContext {
   /** Basic Pitch onset activations, per frame and key. */
@@ -175,8 +177,10 @@ export function analyzeArticulation(note: FrameNote, startSeconds: number, conte
   const rise = peak - head;
   const reached = dev.findIndex((v) => v >= head + rise * 0.75);
   const sustained = dev.filter((v) => v >= peak - 0.25).length >= 3;
-  if (rise >= 0.75 && sustained && valid[reached].i > 5) {
+  // A bend takes time: a note too short to hold one is a glide of the pitch track.
+  if (rise >= 0.75 && sustained && valid[reached].i > 5 && raw.length / FRAMES_PER_SECOND >= MIN_BEND_SECONDS) {
     result.bend = Math.min(3, round(rise, 0.5));
+    result.bendAt = Number((valid[reached].i / FRAMES_PER_SECOND).toFixed(3));
     if (tail <= head + rise * 0.4 && reached < dev.length - 3) result.release = true;
   } else {
     // A glide into the note, inside it or just before it.
@@ -230,6 +234,7 @@ export function mergeBends(notes: NoteEvent[]): NoteEvent[] {
     if (!bent) continue;
     removed.add(bent);
     note.bend = bent.pitch - note.pitch;
+    note.bendAt = Number((bent.start - note.start).toFixed(3));
     note.duration = Number((end(bent) - note.start).toFixed(4));
     delete note.slideOut;
     if (bent.vibrato) note.vibrato = true;
@@ -253,6 +258,7 @@ export function mergeBends(notes: NoteEvent[]): NoteEvent[] {
     const next = sorted.find((n) => !removed.has(n) && n.pitch === note.pitch + up && n.start >= end(note) - 0.05 && n.start <= end(note) + 0.6);
     if (next && picked(next)) continue;
     note.bend = up;
+    note.bendAt = note.duration;
     delete note.slideOut;
     const arrival = next && next.slideIn !== undefined && next.slideIn <= -0.8 ? next : undefined;
     if (arrival) {
@@ -262,4 +268,39 @@ export function mergeBends(notes: NoteEvent[]): NoteEvent[] {
     }
   }
   return sorted.filter((n) => !removed.has(n));
+}
+
+/** Seconds of another note that must ring under a "bend" for it to be a hammer-on in fingerstyle. */
+const UNDER_SECONDS = 0.1;
+
+/**
+ * In fingerstyle, with other strings ringing under it, a rise of a whole tone without a new pluck is a
+ * finger hammering the next note on (2nd fret, then 4th), not a bend: bends there are small, to give a
+ * note some life. Such a note becomes the note, then the hammered one. Single-line bends stay bends.
+ */
+export function hammersFromBends(notes: NoteEvent[]): NoteEvent[] {
+  const result: NoteEvent[] = [];
+  for (const note of notes) {
+    const accompanied = notes.some(
+      (o) => o !== note && o.pitch !== note.pitch && o.start <= note.start + 0.05 && o.start + o.duration >= note.start + UNDER_SECONDS,
+    );
+    if (!note.bend || note.bend < 1.5 || note.release || !accompanied) {
+      result.push(note);
+      continue;
+    }
+    const at = Math.min(Math.max(note.bendAt ?? note.duration / 3, 0.05), note.duration - 0.05);
+    const { bend, bendAt: _at, vibrato, slideOut, ...first } = note;
+    result.push({ ...first, duration: Number(at.toFixed(4)) });
+    result.push({
+      start: Number((note.start + at).toFixed(4)),
+      duration: Number((note.duration - at).toFixed(4)),
+      pitch: note.pitch + Math.round(bend),
+      velocity: note.velocity,
+      attack: 0,
+      onset: 0,
+      ...(vibrato ? { vibrato } : {}),
+      ...(slideOut !== undefined ? { slideOut } : {}),
+    });
+  }
+  return result.map(({ bendAt: _at, ...note }) => note);
 }
