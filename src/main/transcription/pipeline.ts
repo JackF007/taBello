@@ -10,7 +10,7 @@ import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
 import type { ClickTrack, ErrorCode, NoteEvent, Sensitivity } from '../../shared/ipc';
 import { MAX_DURATION_SECONDS } from '../../shared/ipc';
 import { removeMetronome } from './metronome';
-import { analyzeArticulation, mergeBends, packContour, pitchDeviation, transientEnvelope } from './articulation';
+import { analyzeArticulation, hammersFromBends, mergeBends, packContour, pitchDeviation, transientEnvelope } from './articulation';
 
 /** Basic Pitch expects mono audio at this rate. */
 export const SAMPLE_RATE = 22050;
@@ -273,6 +273,22 @@ const HARMONIC_INTERVALS = new Set([12, 19, 24]);
  * Drops notes that are most likely overtones of a louder note starting at the same time:
  * an octave, octave + fifth or two octaves above it, and much quieter.
  */
+/**
+ * A short, quiet note alone in seconds of silence (a click before the music starts, a chair, a
+ * breath) is noise, not music: a played note that short has others around it.
+ */
+export function dropStrayNotes(notes: NoteEvent[]): NoteEvent[] {
+  const STRAY_SECONDS = 0.15;
+  const STRAY_VELOCITY = 0.4;
+  const ALONE_SECONDS = 1.5;
+  return notes.filter(
+    (note) =>
+      note.duration >= STRAY_SECONDS ||
+      note.velocity >= STRAY_VELOCITY ||
+      notes.some((other) => other !== note && Math.abs(other.start - note.start) <= ALONE_SECONDS),
+  );
+}
+
 export function removeHarmonics(notes: NoteEvent[]): NoteEvent[] {
   return notes.filter(
     (note) =>
@@ -429,5 +445,7 @@ export async function detectNotes(recording: Float32Array, options: DetectNotesO
     })
     .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
   // Overtones are checked again once the notes they belong to have their full length.
-  return mergeBends(alignInferredOnsets(removeHarmonics(mergeRetriggeredNotes(dropPreEchoes(removeHarmonics(notes)), repicked)))).sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+  return dropStrayNotes(hammersFromBends(mergeBends(alignInferredOnsets(removeHarmonics(mergeRetriggeredNotes(dropPreEchoes(removeHarmonics(notes)), repicked)))))).sort(
+    (a, b) => a.start - b.start || a.pitch - b.pitch,
+  );
 }

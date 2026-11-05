@@ -87,6 +87,8 @@ export interface NoteEvent {
   onset?: number;
   /** Bend, in semitones (0.5 steps). */
   bend?: number;
+  /** While transcribing only (not saved): seconds from the start to where a bend reaches its pitch. */
+  bendAt?: number;
   /** The bend goes back down to the original pitch. */
   release?: boolean;
   /** Pitch glide at the start of the note, in semitones relative to it (negative: from below). */
