@@ -6,7 +6,7 @@
 appId: org.tabello.app
 productName: TaBello
 # Shown as the publisher and copyright in the installers and in the app's About box.
-copyright: Copyright © 2026 Giacomo Ferlaino (JackF007)
+copyright: Copyright © 2026 JackF007
 directories:
   buildResources: build
   output: release/${version}
@@ -61,7 +61,7 @@ linux:
   executableName: tabello
   syncDesktopName: true
   synopsis: Turn recordings into guitar, bass and ukulele tabs
-  maintainer: Giacomo Ferlaino (JackF007) <45083625+JackF007@users.noreply.github.com>
+  maintainer: JackF007 <45083625+JackF007@users.noreply.github.com>
 publish:
   provider: github
   releaseType: draft

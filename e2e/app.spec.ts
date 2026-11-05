@@ -269,7 +269,7 @@ test('offers to download the separation model', async () => {
   await about.getByRole('button', { name: 'Close' }).click();
   await expect(about).toBeHidden();
 
-  const remove = page.getByRole('button', { name: /Remove the separation model/ });
+  const remove = page.getByRole('button', { name: /Remove Demucs/ });
   if (await remove.isVisible()) {
     await remove.click();
     await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
@@ -289,7 +289,7 @@ test('offers to download the separation model', async () => {
 
 test('offers a way to report problems and to turn the update check off', async () => {
   await page.getByRole('link', { name: 'Transcribe', exact: true }).click();
-  await expect(page.locator('footer')).toContainText('© 2026 Giacomo Ferlaino (JackF007)');
+  await expect(page.locator('footer')).toContainText('© 2026 JackF007');
   await expect(page.getByRole('link', { name: 'Report a problem' })).toHaveAttribute('href', /github\.com\/JackF007\/taBello\/issues\/new\/choose/);
   await expect(page.getByRole('button', { name: 'Show the log' })).toBeVisible();
   const updates = page.getByRole('button', { name: /Check for updates/ });
