@@ -32,6 +32,9 @@ describe('chordVoicing', () => {
 
   it('puts a slash chord bass on the lowest string', () => {
     expect(shape(chordVoicing({ root: 0, intervals: MAJOR, bass: 7, ...standard }))).toBe('332010'); // C/G
+    // A bass outside the chord: Em over D, the open D string under an open E minor.
+    expect(shape(chordVoicing({ root: 4, intervals: MINOR, bass: 2, ...standard }))).toBe('xx0000'); // Em/D
+    expect(shape(chordVoicing({ root: 0, intervals: MAJOR, bass: 11, ...standard }))).toBe('x22010'); // C/B
   });
 
   it('works on other tunings and on ukulele', () => {
