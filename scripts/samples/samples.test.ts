@@ -13,7 +13,7 @@ import { arrange } from '../../src/renderer/src/lib/music/arrange';
 import { detectTempoChanges } from '../../src/renderer/src/lib/music/tempo';
 import { detectKey, detectMeter, estimateTempo } from '../../src/renderer/src/lib/music/theory';
 import { RATE } from '../../src/main/transcription/testing/strings';
-import { saintsBass } from './scores';
+import { PIECES, saintsBass } from './scores';
 
 const require = createRequire(import.meta.url);
 const assets = {
@@ -74,6 +74,21 @@ describe('samples', { timeout: 120_000 }, () => {
     expect(result.meter.meter).toBe('4/4');
     expect(result.key.name).toBe('C major');
     expect(result.techniques).toEqual([]);
+  });
+
+  // Against the scores the samples were rendered from: the notes found, onset within 50 ms. Measured:
+  // Greensleeves 1.00, Romance 0.98, Minuet 0.98, Ode to Joy 0.90. (The blues lick is left out: its
+  // score counts a hammer-on as one note bending to the next, the tab as two.)
+  it.each([
+    ['greensleeves', 0.97],
+    ['romance', 0.95],
+    ['minuet', 0.95],
+    ['ode-to-joy', 0.85],
+  ])('%s: the notes of its score', async (id, minimum) => {
+    const { notes } = await transcribe(id);
+    const truth = PIECES.find((p) => p.file === getSample(id)!.file)!.parts.flatMap((p) => p.notes);
+    const reference = truth.map((n) => ({ start: n.start, duration: n.duration, pitch: n.pitch, velocity: 1 }));
+    expect(noteScores(reference.length, notes.length, matchNotes(reference, notes).length).f1).toBeGreaterThanOrEqual(minimum);
   });
 });
 
