@@ -17,3 +17,32 @@
   fill: var(--gh-orange);
   stroke: var(--gh-orange);
 }
+
+/* The neck under the transport bar: a note lights up when it is played, and dims while it rings. */
+@keyframes fret-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.fret-note {
+  animation: fret-pop 0.18s ease-out;
+}
+
+.fret-note-ringing {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fret-note {
+    animation: none;
+  }
+}

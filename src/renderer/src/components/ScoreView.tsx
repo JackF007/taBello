@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlphaTabApi, LayoutMode, LogLevel, model, NotationElement, PlayerMode, synth } from '@coderline/alphatab';
-import { AudioLines, Loader2, Pause, Play, Repeat, Square, Timer, X } from 'lucide-react';
+import { AlphaTabApi, LayoutMode, LogLevel, model, NotationElement, PlayerMode, ScrollMode, synth } from '@coderline/alphatab';
+import { AudioLines, Guitar, Loader2, Pause, Play, Repeat, Square, Timer, X } from 'lucide-react';
 import Equalizer from '@/components/Equalizer';
+import Fretboard, { type FretboardNote } from '@/components/Fretboard';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Toggle } from '@/components/ui/toggle';
@@ -29,6 +30,8 @@ interface ScoreViewProps {
   dragLabel?: (location: NoteLocation, drag: NoteDrag) => string;
   /** Changing this plays the selected note (after an edit, to hear it). */
   previewKey?: number;
+  /** The instrument's neck, to show where the notes being played are: open-string names, lowest first. */
+  neck?: { strings: string[]; capo: number; frets: number };
   /** Extra controls for the transport bar. */
   controls?: ReactNode;
   /** An extra toolbar row below the transport bar. */
@@ -47,6 +50,8 @@ const PX_PER_SEMITONE = 8;
 const DRAG_THRESHOLD = 5;
 
 const SPEEDS = ['0.5', '0.75', '1'];
+/** Pixels of the score kept in sight above the line being played. */
+const SCROLL_CONTEXT = 140;
 
 // Tab numbers take the Guitar Hero fret colors, from the lowest string up.
 const STRING_COLORS = ['#2ee05a', '#ff3355', '#ffd600', '#2e9bff', '#ff8a1f', '#b45cff'];
@@ -83,7 +88,7 @@ interface Box {
  * Renders notation and tablature with alphaTab and plays it back, either with the bundled soundfont
  * or by following the original recording (cursor in sync, same speed and loop controls).
  */
-const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected = null, onNoteDrag, dragLabel, previewKey, controls, toolbar }: ScoreViewProps) => {
+const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected = null, onNoteDrag, dragLabel, previewKey, neck, controls, toolbar }: ScoreViewProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<AlphaTabApi | null>(null);
@@ -92,6 +97,10 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [metronome, setMetronome] = useState(false);
+  const [showNeck, setShowNeck] = useState(true);
+  /** Notes sounding now (from the playback cursor), and the one selected for editing. */
+  const [playing, setPlaying] = useState<FretboardNote[]>([]);
+  const [chosen, setChosen] = useState<FretboardNote | null>(null);
   const [loop, setLoop] = useState(false);
   const [hasRange, setHasRange] = useState(false);
   const [speed, setSpeed] = useState('1');
@@ -112,6 +121,8 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
   const pressRef = useRef<{ x: number; y: number; note?: { location: NoteLocation; barWidth: number }; dragging?: boolean } | null>(null);
   const loadedTexRef = useRef<string | null>(null);
   const selectedRef = useRef(selected);
+  const neckRef = useRef(neck);
+  neckRef.current = neck;
   selectedRef.current = selected;
   const settingsRef = useRef({ metronome, loop, speed });
   settingsRef.current = { metronome, loop, speed };
@@ -125,6 +136,7 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     // edit shows in both.
     const bounds = note ? (api?.boundsLookup?.findBeats(beat!)?.flatMap((b) => b.notes ?? []).filter((n) => n.note === note) ?? []) : [];
     setHighlights(bounds.map(({ noteHeadBounds: box }) => ({ x: box.x, y: box.y, w: box.w, h: box.h })));
+    setChosen(note ? { string: note.string - 1, fret: note.fret + (neckRef.current?.capo ?? 0), selected: true } : null);
   }, []);
 
   useEffect(updateHighlight, [selected, updateHighlight]);
@@ -159,6 +171,10 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
         // GeneralUser GS guitars and bass, built by scripts/build-soundfont.py.
         soundFont: './soundfont/generaluser-gs-tabello.sf2',
         scrollElement: scrollRef.current,
+        // Scroll to the line being played with some of the score above it in sight (at the start: the
+        // title and chord diagrams).
+        scrollOffsetY: -SCROLL_CONTEXT,
+        scrollMode: ScrollMode.Off,
         enableCursor: true,
         enableAnimatedBeatCursor: true,
         enableUserInteraction: true,
@@ -177,7 +193,20 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
       api.playbackSpeed = Number(rate);
       setIsPlayerReady(true);
     });
-    api.playerStateChanged.on((e) => setIsPlaying(e.state === synth.PlayerState.Playing));
+    api.playerStateChanged.on((e) => {
+      setIsPlaying(e.state === synth.PlayerState.Playing);
+      // The score follows the cursor once it plays: opened, it stays at its top (title, chord diagrams).
+      if (e.state === synth.PlayerState.Playing) api.settings.player.scrollMode = ScrollMode.Continuous;
+    });
+    // The notes under the cursor, for the neck: a picked note bright, a tied one still ringing.
+    api.activeBeatsChanged.on(({ activeBeats }) => {
+      const capo = neckRef.current?.capo ?? 0;
+      setPlaying(
+        activeBeats
+          .filter((beat) => beat.voice.bar.staff.index === 0 && beat.voice.bar.staff.track.index === 0)
+          .flatMap((beat) => beat.notes.map((n) => ({ string: n.string - 1, fret: n.fret + capo, ringing: n.isTieDestination }))),
+      );
+    });
     api.playbackRangeChanged.on((e) => setHasRange(e.playbackRange !== null));
     api.noteMouseDown.on((note) => {
       const location = { bar: note.beat.voice.bar.index, beat: note.beat.index, string: note.string - 1, voice: note.beat.voice.index };
@@ -240,6 +269,7 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     if (!api || tex === loadedTexRef.current) return;
     setError(null);
     api.stop();
+    setPlaying([]);
     loadedTexRef.current = tex;
     api.tex(tex);
   }, [tex]);
@@ -355,7 +385,10 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
           variant="outline"
           size="icon"
           className="h-11 w-11 rounded-full"
-          onClick={() => apiRef.current?.stop()}
+          onClick={() => {
+            apiRef.current?.stop();
+            setPlaying([]);
+          }}
           disabled={!isPlayerReady}
           aria-label="Stop"
         >
@@ -385,6 +418,17 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
         >
           <Timer className="h-4 w-4 mr-1" /> Metronome
         </Toggle>
+        {neck && (
+          <Toggle
+            pressed={showNeck}
+            onPressedChange={setShowNeck}
+            aria-label="Neck"
+            title="Show where the notes being played are on the neck"
+            className="h-11 rounded-full px-4 data-[state=on]:bg-secondary data-[state=on]:text-gh-yellow"
+          >
+            <Guitar className="h-4 w-4 mr-1" /> Neck
+          </Toggle>
+        )}
         {controls}
         <Equalizer active={isPlaying} className="h-6 ml-1" />
         <div className="flex flex-wrap items-center gap-3 ml-auto text-sm text-muted-foreground">
@@ -426,6 +470,23 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
       </div>
 
       {toolbar && <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2">{toolbar}</div>}
+
+      {neck && showNeck && (
+        <div className="border-b bg-[#0d0c1b] px-4 py-2">
+          <Fretboard
+            strings={neck.strings}
+            colors={STRING_COLORS}
+            capo={neck.capo}
+            frets={neck.frets}
+            // Playing: the notes sounding (and the selected one). Paused with a note selected: that note alone.
+            notes={
+              chosen && !isPlaying
+                ? [chosen]
+                : [...playing.filter((n) => !chosen || n.string !== chosen.string || n.fret !== chosen.fret), ...(chosen ? [chosen] : [])]
+            }
+          />
+        </div>
+      )}
 
       {error && <p className="px-4 py-3 text-sm text-destructive">Could not render the score: {error}</p>}
 

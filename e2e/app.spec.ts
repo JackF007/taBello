@@ -104,6 +104,8 @@ test('transcribes a video into a playable, exportable score', async () => {
   await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Play' }).click();
   await expect.poll(() => page.evaluate(() => !document.querySelector('video')!.paused)).toBe(true);
+  // The notes being played light up on the neck.
+  await expect(page.getByTestId('fretboard')).toHaveAttribute('aria-label', /^Notes on the neck: /);
   await page.getByRole('button', { name: 'Pause' }).click();
   await expect.poll(() => page.evaluate(() => document.querySelector('video')!.paused)).toBe(true);
   await page.getByRole('radio', { name: 'Transcription' }).click();
@@ -118,6 +120,8 @@ test('transcribes a video into a playable, exportable score', async () => {
   await expect(info).toHaveText(/^[A-G]♯?\d$/);
   const name = await info.textContent();
   const fret = Number(await page.locator('#note-fret').inputValue());
+  // The neck shows the selected note alone, where it is played.
+  await expect(page.getByTestId('fretboard')).toHaveAttribute('aria-label', new RegExp(`^Notes on the neck: \\w+ string, ${fret ? `fret ${fret}` : 'open'}$`));
   await page.keyboard.press('ArrowUp');
   await expect(info).not.toHaveText(name!);
   await expect(page.locator('#note-fret')).toHaveValue(String(fret + 1));
