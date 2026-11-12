@@ -1,5 +1,10 @@
 # Builds installers on GitHub's free runners and attaches them to a draft GitHub Release.
 # Trigger: push a tag matching the package.json version, e.g. `git tag v0.1.0 && git push origin v0.1.0`.
+#
+# Signing is optional (see docs/RELEASING.md): without the certificates below the installers are
+# built as before (macOS ad-hoc signed, Windows unsigned) and the systems warn on first launch.
+# With them, macOS builds are signed with a Developer ID and notarized by Apple, and Windows builds
+# are signed with Azure Trusted Signing, so neither system blocks them.
 name: Release
 
 on:
@@ -25,6 +30,40 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx electron-vite build
-      - run: npx electron-builder --publish always
+      - name: Build the installers (signed when the certificates are set up)
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS: Developer ID certificate (.p12, base64) and an App Store Connect API key to notarize.
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          MAC_IDENTITY: ${{ secrets.MAC_IDENTITY }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # Windows: Azure Trusted Signing (an app registration allowed to sign).
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
+        run: |
+          args=()
+          if [ "$RUNNER_OS" = macOS ] && [ -n "$MAC_CERTIFICATE" ]; then
+            echo "Signing with a Developer ID and notarizing."
+            export CSC_LINK="$MAC_CERTIFICATE" CSC_KEY_PASSWORD="$MAC_CERTIFICATE_PASSWORD"
+            export APPLE_API_KEY="$RUNNER_TEMP/apple-api-key.p8"
+            printf '%s' "$APPLE_API_KEY_CONTENT" > "$APPLE_API_KEY"
+            args+=(-c.mac.identity="$MAC_IDENTITY" -c.mac.hardenedRuntime=true -c.mac.notarize=true
+              -c.mac.entitlements=build/entitlements.mac.plist -c.mac.entitlementsInherit=build/entitlements.mac.plist)
+          fi
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$AZURE_CLIENT_SECRET" ]; then
+            echo "Signing with Azure Trusted Signing."
+            args+=(-c.win.azureSignOptions.endpoint="$AZURE_SIGNING_ENDPOINT"
+              -c.win.azureSignOptions.codeSigningAccountName="$AZURE_SIGNING_ACCOUNT"
+              -c.win.azureSignOptions.certificateProfileName="$AZURE_CERTIFICATE_PROFILE"
+              -c.win.azureSignOptions.publisherName="$AZURE_PUBLISHER_NAME")
+          fi
+          npx electron-builder --publish always "${args[@]}"
