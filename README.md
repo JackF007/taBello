@@ -34,7 +34,10 @@ check for new versions, which you can turn off.)
   fretboard detection see which frets the fingers are on, and the notes are written there (the same
   note can be played in several places on the neck; the sound alone cannot tell which). It runs by
   itself the first time a video project opens, on your computer; *Hand from the video* turns it off.
-  It needs 3D graphics (WebGL); MediaPipe's own usage statistics are blocked, so nothing is sent.
+  It is a help on top of the sound, never a requirement: where the hand is in sight for only part of
+  the video, that part guides the frets; where it is not seen at all (no close-ups, or a video it
+  cannot read), the tab is written from the sound alone, without warnings. MediaPipe's own usage
+  statistics are blocked, so nothing is sent.
   *How TaBello listens*, on the Transcribe page, explains in plain words which AI models are used and
   what each one does.
 - **Clean results**: string overtones, echoes of ringing notes and the pre-echo of a pick are left out;

@@ -57,7 +57,8 @@ const AboutAi = ({ className }: { className?: string }) => {
           <Model icon={<Hand className="h-4 w-4" />} title="MediaPipe Hands" by="Google, Apache-2.0">
             <p className="text-muted-foreground">
               In a video, finds the hand on the frets (in close-ups of the neck), so each note is written where it is played on
-              the neck, not only where it is easiest. It is part of TaBello (8 MB) and looks at each video once.
+              the neck, not only where it is easiest. It is a help, not a must: where the hand is not in sight the notes are placed
+              from the sound. It is part of TaBello (8 MB) and looks at each video once.
             </p>
           </Model>
           <Model icon={<Music className="h-4 w-4" />} title="The music, without AI" by="TaBello">

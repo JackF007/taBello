@@ -19,17 +19,23 @@ const TIPS = [8, 12, 16, 20];
 let landmarker: Promise<HandLandmarker> | null = null;
 
 function handLandmarker(): Promise<HandLandmarker> {
-  landmarker ??= FilesetResolver.forVisionTasks('./vision/wasm').then((files) =>
-    HandLandmarker.createFromOptions(files, {
-      baseOptions: { modelAssetPath: './vision/hand_landmarker.task', delegate: 'CPU' },
-      runningMode: 'IMAGE',
-      numHands: 2,
-      // Lesson videos are often dim and the hand is seen from above: accept weak detections, the
-      // neck check below filters what is not a hand on the frets.
-      minHandDetectionConfidence: 0.1,
-      minHandPresenceConfidence: 0.1,
-    }),
-  );
+  landmarker ??= FilesetResolver.forVisionTasks('./vision/wasm')
+    .then((files) =>
+      HandLandmarker.createFromOptions(files, {
+        baseOptions: { modelAssetPath: './vision/hand_landmarker.task', delegate: 'CPU' },
+        runningMode: 'IMAGE',
+        numHands: 2,
+        // Lesson videos are often dim and the hand is seen from above: accept weak detections, the
+        // neck check below filters what is not a hand on the frets.
+        minHandDetectionConfidence: 0.1,
+        minHandPresenceConfidence: 0.1,
+      }),
+    )
+    .catch((error: unknown) => {
+      // Not kept: the next video tries to load the model again.
+      landmarker = null;
+      throw error;
+    });
   return landmarker;
 }
 
@@ -52,20 +58,28 @@ const PLAYBACK_RATE = 8;
 
 /**
  * Calls `look` on a frame every STEP seconds of the video, in order, pausing the (muted) video while
- * it looks.
+ * it looks. Frames are delivered only while the window is in sight, so the video also waits while
+ * TaBello is minimized or hidden: otherwise it would run on unwatched and parts would be missed.
  */
 function everyStep(video: HTMLVideoElement, look: (time: number) => Promise<void>, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     let next = 0;
     let done = false;
+    let looking = false;
+    const play = () => {
+      if (!done && !looking && !document.hidden) void video.play().catch(finish);
+    };
+    const onVisibility = () => (document.hidden ? video.pause() : play());
     const finish = (error?: unknown) => {
       if (done) return;
       done = true;
+      document.removeEventListener('visibilitychange', onVisibility);
       video.pause();
       if (error) reject(error);
       else resolve();
     };
     signal?.addEventListener('abort', () => finish(new DOMException('Stopped', 'AbortError')));
+    document.addEventListener('visibilitychange', onVisibility);
     video.onended = () => finish();
     video.onerror = () => finish(new Error('The video could not be read.'));
     const onFrame = (_now: number, frame: VideoFrameCallbackMetadata) => {
@@ -75,17 +89,19 @@ function everyStep(video: HTMLVideoElement, look: (time: number) => Promise<void
         return;
       }
       video.pause();
+      looking = true;
       const time = frame.mediaTime;
       next = time + STEP;
       look(time).then(() => {
+        looking = false;
         if (done) return;
         video.requestVideoFrameCallback(onFrame);
-        void video.play().catch(finish);
+        play();
       }, finish);
     };
     video.playbackRate = PLAYBACK_RATE;
     video.requestVideoFrameCallback(onFrame);
-    void video.play().catch(finish);
+    play();
   });
 }
 
@@ -123,12 +139,21 @@ export async function watchHand(url: string, { onProgress, signal }: WatchOption
   const context = canvas.getContext('2d', { willReadFrequently: true })!;
   const worker = new Worker(new URL('./neck.worker.ts', import.meta.url), { type: 'module' });
   const necks = new Map<number, (neck: Neck | null) => void>();
+  let workerFailed = false;
   worker.onmessage = (event: MessageEvent<NeckResponse>) => {
     necks.get(event.data.id)?.(event.data.neck);
     necks.delete(event.data.id);
   };
+  // A worker that cannot run answers nothing: count its frames as showing no neck instead of waiting.
+  worker.onerror = (event) => {
+    console.warn('The neck finder could not run', event.message);
+    workerFailed = true;
+    for (const resolve of necks.values()) resolve(null);
+    necks.clear();
+  };
   const findNeck = (id: number, rgba: Uint8ClampedArray) =>
     new Promise<Neck | null>((resolve) => {
+      if (workerFailed) return resolve(null);
       necks.set(id, resolve);
       const request: NeckRequest = { id, width, height, rgba };
       worker.postMessage(request, [rgba.buffer]);
@@ -136,20 +161,30 @@ export async function watchHand(url: string, { onProgress, signal }: WatchOption
 
   try {
     await everyStep(video, async (time) => {
-      context.drawImage(video, 0, 0, width, height);
-      frames++;
-      const pixels = context.getImageData(0, 0, width, height);
-      // Hands are looked for only in close-ups of the neck, the slower step.
-      const neck = await findNeck(frames, pixels.data);
-      if (neck) {
-        closeUps++;
-        closeUpTimes.push(Number(time.toFixed(2)));
-        const frets = fingertipFrets(neck, hands.detect(canvas).landmarks, width, height);
-        // Two fingertips on the frets at least: one alone may be the thumb or a stray point.
-        if (frets.length >= 2) windows.push({ time: Number(time.toFixed(2)), low: Math.min(...frets), high: Math.max(...frets) });
+      try {
+        context.drawImage(video, 0, 0, width, height);
+        frames++;
+        const pixels = context.getImageData(0, 0, width, height);
+        // Hands are looked for only in close-ups of the neck, the slower step.
+        const neck = await findNeck(frames, pixels.data);
+        if (neck) {
+          closeUps++;
+          closeUpTimes.push(Number(time.toFixed(2)));
+          const frets = fingertipFrets(neck, hands.detect(canvas).landmarks, width, height);
+          // Two fingertips on the frets at least: one alone may be the thumb or a stray point.
+          if (frets.length >= 2) windows.push({ time: Number(time.toFixed(2)), low: Math.min(...frets), high: Math.max(...frets) });
+        }
+      } catch (error) {
+        // One frame that cannot be read is skipped: the others still tell where the hand is.
+        console.warn('A video frame could not be watched', error);
       }
       onProgress?.(Math.min(1, (time + STEP) / video.duration));
     }, signal);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    // The video stopped being readable part of the way: what was seen up to there still helps.
+    if (frames === 0) throw error;
+    console.warn('The video could be watched only in part', error);
   } finally {
     worker.terminate();
     video.removeAttribute('src');
