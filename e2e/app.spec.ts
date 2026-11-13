@@ -76,9 +76,9 @@ test('transcribes a video into a playable, exportable score', async () => {
   await expect(page.locator('#capo')).toContainText('Auto (none)');
   await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 30_000 });
   await expect(page.locator('.at-surface > *').first()).toBeAttached();
-  // The video is watched for the fretting hand by itself: a plain colour shows none (and without
-  // 3D graphics, as on CI, the hand cannot be watched at all). Either way the score stays as heard.
-  await expect(page.getByTestId('hand-vision')).toHaveText(/No close-up of the hand|Could not watch the hand/, { timeout: 60_000 });
+  // The video is watched for the fretting hand by itself; this clip is a plain colour, so none is
+  // found. (Software WebGL is enabled, so the hand is watched even on a machine without a GPU.)
+  await expect(page.getByTestId('hand-vision')).toHaveText('No close-up of the hand in the video', { timeout: 60_000 });
 
   // The original video is served with range requests, so seeking works.
   const seeked = await page.evaluate(async () => {

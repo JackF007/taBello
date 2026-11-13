@@ -8,6 +8,13 @@ import { cancelTranscription } from './transcription/service';
 const PRELOAD_PATH = path.join(import.meta.dirname, '../preload/index.cjs');
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
 
+// Watching the fretting hand (MediaPipe) needs WebGL. Machines with a working GPU have it; those
+// without one (virtual machines, remote desktops, blocklisted drivers) do not, and Electron — unlike
+// Chrome — will not fall back to software rendering unless this switch is set. It only adds that
+// fallback: a real GPU is still used when present. Safe here because the renderer loads TaBello's own
+// bundle over a custom scheme and never navigates to outside web content (see isTrustedUrl).
+app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+
 registerSchemes();
 
 function isTrustedUrl(url: string): boolean {
