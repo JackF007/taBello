@@ -611,7 +611,7 @@ const ProjectEditor = ({ project }: { project: Project }) => {
           {hand.state === 'failed' && (
             <span
               className="rounded-full border px-3 py-1.5 text-sm text-muted-foreground"
-              title="Watching the hand needs 3D graphics (WebGL), which this computer does not offer to TaBello: the notes are placed from the sound alone"
+              title="The hand could not be watched in this video (the model or the video could not be read): the notes are placed from the sound alone"
               data-testid="hand-vision"
             >
               Could not watch the hand in the video
