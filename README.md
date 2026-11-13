@@ -67,6 +67,8 @@ check for new versions, which you can turn off.)
 - **Playback** with realistic guitar, bass and ukulele sounds (the GeneralUser GS soundfont), a cursor
   and a metronome.
 - **Play along with the original recording** (audio or video): the score follows it.
+- **See it on the neck**: under the player, a fretboard drawn to scale lights each note where it is
+  played, in its string's color, as it sounds (*Neck* hides it); while editing it shows the selected note.
 - **Loop and slow down**: select bars to loop a passage, and lower the speed without changing the pitch.
 - **Transpose**, to suit a voice or a capo, a semitone at a time. With *Same shapes (capo)* the tab and
   chord shapes stay the same and the capo moves (capo on the 2nd fret: the song sounds a tone higher);
@@ -103,8 +105,8 @@ open it, and TaBello is ready. It has no account and costs nothing.
 | **Linux** (Ubuntu, Debian, Mint…) | `TaBello-<version>-linux-amd64.deb` | Double-click it and choose *Install*. |
 | **Linux** (any other) | `TaBello-<version>-linux-x86_64.AppImage` | Right-click → *Properties* → *Allow executing as program*, then double-click it. |
 
-TaBello is free software and its installers are not signed with paid certificates, so the first time
-your computer asks for one extra confirmation:
+Until its installers are signed (see [docs/RELEASING.md](docs/RELEASING.md#signing-installers-that-open-without-warnings)),
+the first time your computer asks for one extra confirmation:
 
 - **Windows**: if a blue "Windows protected your PC" window appears, click *More info*, then *Run anyway*.
 - **Mac**: if it says TaBello "cannot be opened", open *System Settings → Privacy & Security*, scroll
@@ -393,8 +395,9 @@ the fingering optimizer alone (arranging the annotated notes). Results are also 
 
 Releases are built for free by GitHub Actions: push a tag matching the version in `package.json`
 (e.g. `git tag v0.1.0 && git push origin v0.1.0`) and installers for Windows, macOS and Linux are
-attached to a draft GitHub Release. Builds are unsigned (macOS ad-hoc signed); free code signing for
-open-source projects such as [SignPath Foundation](https://signpath.org/) can remove the Windows warning.
+attached to a draft GitHub Release. They are signed and notarized when the certificates are set up
+in the repository (Apple Developer ID; Azure Trusted Signing or SignPath for Windows), see
+[docs/RELEASING.md](docs/RELEASING.md); otherwise they are unsigned (macOS ad-hoc signed).
 
 ## Roadmap
 

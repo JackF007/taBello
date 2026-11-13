@@ -223,6 +223,17 @@ const ProjectEditor = ({ project }: { project: Project }) => {
     [],
   );
 
+  // The neck under the player: as many frets as the part reaches (12 at least).
+  const neck = useMemo(() => {
+    const highest = Math.max(0, ...[...arrangement.bars, ...(arrangement.bass ?? [])].flat().flatMap((b) => b.notes.map((n) => n.fret)));
+    return {
+      // The strings as tuned (the capo is drawn on the neck).
+      strings: tuning.strings.map((open) => pitchName(open).replace(/\d+$/, '')),
+      capo,
+      frets: Math.min(instrument.frets, Math.max(12, highest + capo + 2)),
+    };
+  }, [arrangement, tuning, capo, instrument]);
+
   const selectedNote = selected && findNote(arrangement, selected);
   const editContext = { tuning: tuning.strings, capo, frets: instrument.frets };
 
@@ -664,6 +675,7 @@ const ProjectEditor = ({ project }: { project: Project }) => {
         onNoteClick={editing ? selectNote : undefined}
         selected={editing ? selected : null}
         onNoteDrag={editing ? dragNote : undefined}
+        neck={neck}
         dragLabel={describeDrag}
         previewKey={preview}
         controls={
