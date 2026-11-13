@@ -394,10 +394,10 @@ the fingering optimizer alone (arranging the annotated notes). Results are also 
 ### Releases
 
 Releases are built for free by GitHub Actions: push a tag matching the version in `package.json`
-(e.g. `git tag v0.1.0 && git push origin v0.1.0`) and installers for Windows, macOS and Linux are
-attached to a draft GitHub Release. They are signed and notarized when the certificates are set up
-in the repository (Apple Developer ID; Azure Trusted Signing or SignPath for Windows), see
-[docs/RELEASING.md](docs/RELEASING.md); otherwise they are unsigned (macOS ad-hoc signed).
+(e.g. `git tag v0.1.0 && git push origin v0.1.0`) and installers for Windows and Linux are attached to
+a draft GitHub Release. Windows is signed by [SignPath](https://signpath.org/) (free for open source)
+once it is set up in the repository, otherwise it is unsigned; see
+[docs/RELEASING.md](docs/RELEASING.md). macOS builds return once an Apple Developer ID is in place.
 
 ## Roadmap
 

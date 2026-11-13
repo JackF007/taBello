@@ -2,9 +2,12 @@
 # Trigger: push a tag matching the package.json version, e.g. `git tag v0.1.0 && git push origin v0.1.0`.
 #
 # Signing is optional (see docs/RELEASING.md): without the certificates below the installers are
-# built as before (macOS ad-hoc signed, Windows unsigned) and the systems warn on first launch.
-# With them, macOS builds are signed with a Developer ID and notarized by Apple, and Windows builds
-# are signed with Azure Trusted Signing, so neither system blocks them.
+# built as before (Windows unsigned) and Windows warns on first launch. With them, Windows builds are
+# signed by SignPath (free for open-source projects) so SmartScreen stops blocking them.
+#
+# macOS is not built here yet: it needs a paid Apple Developer ID to open without warnings. The
+# scaffolding is kept (the `macos-latest` line and the macOS step below); uncomment the runner and add
+# the Apple secrets to build it again.
 name: Release
 
 on:
@@ -19,9 +22,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest is Apple Silicon; ffmpeg-static downloads the binary for the runner's platform.
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Add `macos-latest` back once the Apple Developer ID is ready (see docs/RELEASING.md).
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # Lifted to env so the Windows signing steps can test it in `if` (secrets are not allowed there).
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -30,7 +36,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx electron-vite build
-      - name: Build the installers (signed when the certificates are set up)
+      - name: Build the installers (macOS signed when its certificates are set up)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -41,14 +47,6 @@ jobs:
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          # Windows: Azure Trusted Signing (an app registration allowed to sign).
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
-          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
-          AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
-          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
         run: |
           args=()
           if [ "$RUNNER_OS" = macOS ] && [ -n "$MAC_CERTIFICATE" ]; then
@@ -59,11 +57,38 @@ jobs:
             args+=(-c.mac.identity="$MAC_IDENTITY" -c.mac.hardenedRuntime=true -c.mac.notarize=true
               -c.mac.entitlements=build/entitlements.mac.plist -c.mac.entitlementsInherit=build/entitlements.mac.plist)
           fi
-          if [ "$RUNNER_OS" = Windows ] && [ -n "$AZURE_CLIENT_SECRET" ]; then
-            echo "Signing with Azure Trusted Signing."
-            args+=(-c.win.azureSignOptions.endpoint="$AZURE_SIGNING_ENDPOINT"
-              -c.win.azureSignOptions.codeSigningAccountName="$AZURE_SIGNING_ACCOUNT"
-              -c.win.azureSignOptions.certificateProfileName="$AZURE_CERTIFICATE_PROFILE"
-              -c.win.azureSignOptions.publisherName="$AZURE_PUBLISHER_NAME")
-          fi
+          # Windows is signed after the build by SignPath (below); every platform publishes to the draft.
           npx electron-builder --publish always "${args[@]}"
+
+      # --- Windows: sign the installer with SignPath and replace the unsigned one on the release. ---
+      # These steps do nothing until SignPath is set up (SIGNPATH_API_TOKEN empty), so releases keep
+      # working unsigned in the meantime. SignPath signs in the cloud, so it is a step after the build;
+      # TaBello only checks GitHub for newer releases (no auto-update files to keep in sync), so
+      # swapping the signed .exe in afterwards is safe. See docs/RELEASING.md for the one-time setup.
+      - name: Upload the unsigned installer for signing
+        id: unsigned
+        if: runner.os == 'Windows' && env.SIGNPATH_API_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-unsigned
+          path: release/*/TaBello-Setup-*.exe
+          if-no-files-found: error
+      - name: Sign the installer with SignPath
+        id: signpath
+        if: runner.os == 'Windows' && env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+      - name: Put the signed installer on the release
+        if: runner.os == 'Windows' && env.SIGNPATH_API_TOKEN != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" signed/TaBello-Setup-*.exe --clobber
