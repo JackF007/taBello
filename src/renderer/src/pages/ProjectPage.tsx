@@ -21,7 +21,7 @@ import { requireApi } from '@/lib/api';
 import { useMenuMusic } from '@/lib/menuMusic';
 import { useHandVision } from '@/lib/vision/useHandVision';
 import { formatDate, formatDuration, isVideoFile } from '@/lib/format';
-import { arrange, detectCapo, detectTuning } from '@/lib/music/arrange';
+import { arrange, detectCapo, detectTuning, handAgreement } from '@/lib/music/arrange';
 import { applyEdit, findNote, locateSource, type NoteEdit, type NoteLocation } from '@/lib/music/edit';
 import { toAlphaTex, toMidi } from '@/lib/music/export';
 import { partNotes } from '@/lib/music/parts';
@@ -203,6 +203,11 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const arrangement = useMemo(
     () => arrange(part.notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo, techniques: settings.techniques, handWindows }),
     [part, instrument, tuning, timing, capo, settings.techniques, handWindows],
+  );
+  // The tab checked against the video: are the notes played while the hand is in sight under it?
+  const agreement = useMemo(
+    () => (hand.state === 'done' && hand.vision.windows.length > 0 ? handAgreement(arrangement, part.notes, hand.vision.windows, capo) : null),
+    [hand, arrangement, part, capo],
   );
   const tex = useMemo(
     () => toAlphaTex(arrangement, { title: project.title, bpm, key: shownKey, instrument, tuning: tuning.strings, capo, chords: settings.chords }),
@@ -623,6 +628,21 @@ const ProjectEditor = ({ project }: { project: Project }) => {
             >
               Hand from the video
             </Option>
+          )}
+          {agreement && agreement.checked > 0 && (
+            <span
+              className={`rounded-full border px-3 py-1.5 text-sm ${
+                agreement.agree === agreement.checked ? 'border-gh-green/60 bg-gh-green/10 text-gh-green' : 'border-gh-yellow/60 bg-gh-yellow/10 text-gh-yellow'
+              }`}
+              title={
+                agreement.agree === agreement.checked
+                  ? `Where the hand is in sight, all ${agreement.checked} fretted notes of the tab are under it: the video confirms where they are played.`
+                  : `Where the hand is in sight, ${agreement.checked - agreement.agree} of ${agreement.checked} fretted notes of the tab are elsewhere on the neck: the sound put them there. Worth a listen, or a look at the video.`
+              }
+              data-testid="hand-agreement"
+            >
+              {agreement.agree === agreement.checked ? 'Video agrees' : 'Video differs'} · {agreement.agree}/{agreement.checked} notes
+            </span>
           )}
 
           <div className="ml-auto flex flex-wrap items-center gap-2">

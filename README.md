@@ -36,7 +36,9 @@ check for new versions, which you can turn off.)
   itself the first time a video project opens, on your computer; *Hand from the video* turns it off.
   It is a help on top of the sound, never a requirement: where the hand is in sight for only part of
   the video, that part guides the frets; where it is not seen at all (no close-ups, or a video it
-  cannot read), the tab is written from the sound alone, without warnings. MediaPipe's own usage
+  cannot read), the tab is written from the sound alone, without warnings. Where the hand is seen,
+  the tab is also checked against it: *Video agrees · 12/12 notes* means every fretted note played
+  there is under the hand; *Video differs* points to the notes worth a second listen. MediaPipe's own usage
   statistics are blocked, so nothing is sent.
   *How TaBello listens*, on the Transcribe page, explains in plain words which AI models are used and
   what each one does.
