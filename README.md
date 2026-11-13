@@ -101,20 +101,19 @@ open it, and TaBello is ready. It has no account and costs nothing.
 | Your computer | File to download | How to install |
 | --- | --- | --- |
 | **Windows** 10 or 11 | `TaBello-Setup-<version>.exe` | Double-click it. TaBello installs (no administrator rights needed), adds an icon to the desktop and the Start menu, and opens. |
-| **Mac** with Apple Silicon (M1 or later) | `TaBello-<version>-mac-arm64.dmg` | Double-click it and drag TaBello onto *Applications*. |
 | **Linux** (Ubuntu, Debian, Mint…) | `TaBello-<version>-linux-amd64.deb` | Double-click it and choose *Install*. |
 | **Linux** (any other) | `TaBello-<version>-linux-x86_64.AppImage` | Right-click → *Properties* → *Allow executing as program*, then double-click it. |
 
+> **Mac**: a macOS build is not shipped yet — it is coming once an Apple Developer ID is in place to
+> sign it (see [docs/RELEASING.md](docs/RELEASING.md)). In the meantime you can run it from source (see
+> [Development](#development)).
+
 Until its installers are signed (see [docs/RELEASING.md](docs/RELEASING.md#signing-installers-that-open-without-warnings)),
-the first time your computer asks for one extra confirmation:
+Windows asks for one extra confirmation the first time: if a blue "Windows protected your PC" window
+appears, click *More info*, then *Run anyway*.
 
-- **Windows**: if a blue "Windows protected your PC" window appears, click *More info*, then *Run anyway*.
-- **Mac**: if it says TaBello "cannot be opened", open *System Settings → Privacy & Security*, scroll
-  down and click *Open Anyway* (only the first time).
-
-To uninstall: on Windows, *Settings → Apps → TaBello → Uninstall*; on a Mac, drag TaBello from
-*Applications* to the Trash; on Linux, remove it from your software center. Your transcriptions stay
-in your user folder unless you delete them.
+To uninstall: on Windows, *Settings → Apps → TaBello → Uninstall*; on Linux, remove it from your
+software center. Your transcriptions stay in your user folder unless you delete them.
 
 You can also run TaBello from source (see [Development](#development)).
 
@@ -419,8 +418,8 @@ Ideas, roughly by priority — contributions welcome:
 - [ ] Add notes and change rhythms in the editor
 - [x] Transpose, with a capo keeping the same shapes
 - [ ] Transpose the original recording too (pitch shifting), to play along in the new key
-- [ ] Code signing for free through an open-source program (e.g. SignPath Foundation), so Windows
-  stops asking for confirmation
+- [x] Code signing for free through an open-source program (SignPath Foundation), so Windows stops
+  asking for confirmation (set up in the release workflow; awaiting SignPath approval of the project)
 - [ ] Intel Mac builds
 - [x] Fingering benchmark and a hand-position model
 - [x] Melody / accompaniment parts
