@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { NoteEvent } from '../../../../shared/ipc';
 import { INSTRUMENTS } from '../../../../shared/instruments';
 import { METERS, type MeterId } from '../../../../shared/meters';
-import { arrange, detectCapo, detectTuning, meterTicks, type ArrangeOptions, type TabBeat } from './arrange';
+import { arrange, detectCapo, handAgreement, detectTuning, meterTicks, type ArrangeOptions, type TabBeat } from './arrange';
 import { applyEdit, findNote, locateSource } from './edit';
 import { tempoMarks, toAlphaTex, toMidi } from './export';
 import { clickBarPhase, clickGrid, detectTempoChanges } from './tempo';
@@ -106,6 +106,25 @@ describe('arrange', () => {
     const capo2 = (handWindows?: ArrangeOptions['handWindows']) => bars(b3, { ...at120, capo: 2, handWindows })[0][0].notes.map((n) => [n.string, n.fret]);
     expect(capo2()).toEqual([[3, 2]]);
     expect(capo2([{ time: 0, low: 9, high: 11 }])).toEqual([[2, 7]]);
+  });
+
+  it('checks the tab against the hand seen in the video', () => {
+    // A3 and C4 written in first position (2nd fret of G, 1st of B).
+    const notes = [note(0.01, 57, 0.45), note(0.51, 60, 0.45)];
+    const tab = arrange(notes, at120);
+    // The hand seen at the 1st–3rd frets for both notes: the tab agrees.
+    expect(handAgreement(tab, notes, [{ time: 0, low: 1, high: 3 }, { time: 0.5, low: 1, high: 3 }])).toEqual({ checked: 2, agree: 2 });
+    // Seen at the 7th–9th frets: the first-position tab is not where the hand is.
+    expect(handAgreement(tab, notes, [{ time: 0, low: 7, high: 9 }, { time: 0.5, low: 7, high: 9 }])).toEqual({ checked: 2, agree: 0 });
+    // Seen only for the first note, or long after: only what was in sight is checked.
+    expect(handAgreement(tab, notes, [{ time: 0, low: 1, high: 3 }])).toEqual({ checked: 1, agree: 1 });
+    expect(handAgreement(tab, notes, [{ time: 9, low: 1, high: 3 }])).toEqual({ checked: 0, agree: 0 });
+    // A capo on the 2nd fret: A3 is the open G string (not checked: no finger), C4 the G string's 3rd
+    // fret above the capo, i.e. the 5th from the nut, under a hand seen at the 3rd–5th frets.
+    const withCapo = arrange(notes, { ...at120, capo: 2 });
+    expect(withCapo.bars[0].flatMap((b) => b.notes.map((n) => [n.string, n.fret]))).toEqual([[3, 0], [3, 3]]);
+    expect(handAgreement(withCapo, notes, [{ time: 0, low: 3, high: 5 }, { time: 0.5, low: 3, high: 5 }], 2)).toEqual({ checked: 1, agree: 1 });
+    expect(handAgreement(withCapo, notes, [{ time: 0.5, low: 8, high: 10 }], 2)).toEqual({ checked: 1, agree: 0 });
   });
 
   it('plays an open E major chord in first position', () => {

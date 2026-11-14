@@ -6,14 +6,14 @@ import { projectMediaUrl, type HandVision, type Project } from '../../../../shar
 import { watchHand } from './handVision';
 
 export type HandVisionState =
-  | { state: 'none' } // no video to watch
+  | { state: 'none' } // no video to watch, or it could not be watched: the tab comes from the sound
   | { state: 'watching'; progress: number }
-  | { state: 'failed' }
   | { state: 'done'; vision: HandVision };
 
 /**
  * The fretting hand seen in a project's video: watched once, in the background, the first time the
- * project is opened, then kept with the project.
+ * project is opened, then kept with the project. It is only a help: where the hand is not seen, or
+ * the video cannot be watched at all, the notes are placed from the sound alone, without a warning.
  */
 export function useHandVision(project: Project): HandVisionState {
   const queryClient = useQueryClient();
@@ -33,8 +33,9 @@ export function useHandVision(project: Project): HandVisionState {
       })
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
-          console.error('Watching the hand failed', error);
-          setState({ state: 'failed' });
+          // Not kept: the next time the project opens, the video is watched again.
+          console.warn('The hand could not be watched in the video', error);
+          setState({ state: 'none' });
         }
       });
     return () => controller.abort();

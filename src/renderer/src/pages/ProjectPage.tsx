@@ -21,14 +21,14 @@ import { requireApi } from '@/lib/api';
 import { useMenuMusic } from '@/lib/menuMusic';
 import { useHandVision } from '@/lib/vision/useHandVision';
 import { formatDate, formatDuration, isVideoFile } from '@/lib/format';
-import { arrange, detectCapo, detectTuning } from '@/lib/music/arrange';
+import { arrange, detectCapo, detectTuning, handAgreement } from '@/lib/music/arrange';
 import { applyEdit, findNote, locateSource, type NoteEdit, type NoteLocation } from '@/lib/music/edit';
 import { toAlphaTex, toMidi } from '@/lib/music/export';
 import { partNotes } from '@/lib/music/parts';
 import { toGuitarPro } from '@/lib/music/guitarPro';
 import { clickBarPhase, clickGrid, detectTempoChanges } from '@/lib/music/tempo';
 import { alphaTexPitch, detectKey, detectMeter, estimateTempo, makeKey } from '@/lib/music/theory';
-import { MAX_TRANSPOSE, projectMediaUrl, type PartId, type ExportFormat, type NoteEvent, type Project, type ProjectSettings } from '../../../shared/ipc';
+import { MAX_TRANSPOSE, projectMediaUrl, type PartId, type ExportFormat, type HandVision, type NoteEvent, type Project, type ProjectSettings } from '../../../shared/ipc';
 import { getTuning, INSTRUMENTS, MAX_CAPO, samePart, type InstrumentId } from '../../../shared/instruments';
 import { METERS, type MeterId } from '../../../shared/meters';
 
@@ -91,6 +91,22 @@ const Option = ({
 const pitchName = (midi: number) => {
   const name = alphaTexPitch(midi);
   return name[0].toUpperCase() + name.slice(1).replace('#', '♯');
+};
+/** Seconds of video each look at the hand stands for (handVision.ts looks every half second). */
+const HAND_STEP = 0.5;
+/**
+ * What the hand seen in the video does to the tab, and over how much of it: often only part of a
+ * lesson is a close-up of the neck, and only there does it guide the frets.
+ */
+const handTitle = (vision: HandVision, duration: number) => {
+  const low = Math.min(...vision.windows.map((w) => w.low));
+  const high = Math.max(...vision.windows.map((w) => w.high));
+  const share = duration > 0 ? Math.min(100, Math.round(((vision.windows.length * HAND_STEP) / duration) * 100)) : 0;
+  return (
+    `The fretting hand was seen on the neck in about ${Math.max(1, share)}% of the video (frets ${low}–${high}). ` +
+    'There, the notes are written where it plays; elsewhere they are placed from the sound. ' +
+    "Watched on your computer by MediaPipe's hand model."
+  );
 };
 const STRING_NAMES = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
 /** Name of a string, given its index in the tuning's physical order (lowest first). */
@@ -187,6 +203,11 @@ const ProjectEditor = ({ project }: { project: Project }) => {
   const arrangement = useMemo(
     () => arrange(part.notes, { tuning: tuning.strings, frets: instrument.frets, ...timing, capo, techniques: settings.techniques, handWindows }),
     [part, instrument, tuning, timing, capo, settings.techniques, handWindows],
+  );
+  // The tab checked against the video: are the notes played while the hand is in sight under it?
+  const agreement = useMemo(
+    () => (hand.state === 'done' && hand.vision.windows.length > 0 ? handAgreement(arrangement, part.notes, hand.vision.windows, capo) : null),
+    [hand, arrangement, part, capo],
   );
   const tex = useMemo(
     () => toAlphaTex(arrangement, { title: project.title, bpm, key: shownKey, instrument, tuning: tuning.strings, capo, chords: settings.chords }),
@@ -603,27 +624,24 @@ const ProjectEditor = ({ project }: { project: Project }) => {
               pressed={settings.videoHand}
               onPressedChange={(videoHand) => updateSettings({ ...settings, videoHand })}
               label="Hand from the video"
-              title={`The fretting hand was seen on the neck at ${hand.vision.windows.length} moments of the video (frets ${Math.min(...hand.vision.windows.map((w) => w.low))}–${Math.max(...hand.vision.windows.map((w) => w.high))}): notes are written where it plays. Watched on your computer by MediaPipe's hand model.`}
+              title={handTitle(hand.vision, project.durationSeconds)}
             >
               Hand from the video
             </Option>
           )}
-          {hand.state === 'failed' && (
+          {agreement && agreement.checked > 0 && (
             <span
-              className="rounded-full border px-3 py-1.5 text-sm text-muted-foreground"
-              title="The hand could not be watched in this video (the model or the video could not be read): the notes are placed from the sound alone"
-              data-testid="hand-vision"
+              className={`rounded-full border px-3 py-1.5 text-sm ${
+                agreement.agree === agreement.checked ? 'border-gh-green/60 bg-gh-green/10 text-gh-green' : 'border-gh-yellow/60 bg-gh-yellow/10 text-gh-yellow'
+              }`}
+              title={
+                agreement.agree === agreement.checked
+                  ? `Where the hand is in sight, all ${agreement.checked} fretted notes of the tab are under it: the video confirms where they are played.`
+                  : `Where the hand is in sight, ${agreement.checked - agreement.agree} of ${agreement.checked} fretted notes of the tab are elsewhere on the neck: the sound put them there. Worth a listen, or a look at the video.`
+              }
+              data-testid="hand-agreement"
             >
-              Could not watch the hand in the video
-            </span>
-          )}
-          {hand.state === 'done' && hand.vision.windows.length === 0 && (
-            <span
-              className="rounded-full border px-3 py-1.5 text-sm text-muted-foreground"
-              title="TaBello looks for the fretting hand in videos, to write the notes where it plays: it needs close-ups of the neck"
-              data-testid="hand-vision"
-            >
-              No close-up of the hand in the video
+              {agreement.agree === agreement.checked ? 'Video agrees' : 'Video differs'} · {agreement.agree}/{agreement.checked} notes
             </span>
           )}
 

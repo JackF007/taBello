@@ -649,6 +649,39 @@ function splitBassVoice(events: VoiceEvent[], meter: Meter): [VoiceEvent[], Voic
   return [upper, bass];
 }
 
+/** The moment the hand was seen nearest to `time`, if close enough to tell where a note there is played. */
+function nearestHand(windows: HandWindow[], time: number): HandWindow | null {
+  let near: HandWindow | null = null;
+  for (const w of windows) if (Math.abs(w.time - time) <= HAND_SECONDS && (!near || Math.abs(w.time - time) < Math.abs(near.time - time))) near = w;
+  return near;
+}
+
+/** The frets (above the capo) the hand seen covers, with a fret to spare on each side. */
+function handFrets(window: HandWindow, capo: number): { low: number; high: number } {
+  return { low: window.low - capo - 1, high: window.high - capo + 1 };
+}
+
+/**
+ * The tab checked against the video: of the fretted notes played while the hand was in sight, how
+ * many are under it. Open strings and tied notes are not counted (no finger, or no new one).
+ */
+export function handAgreement(arrangement: Arrangement, notes: NoteEvent[], windows: HandWindow[], capo = 0): { checked: number; agree: number } {
+  let checked = 0;
+  let agree = 0;
+  for (const bars of arrangement.bass ? [arrangement.bars, arrangement.bass] : [arrangement.bars])
+    for (const beats of bars)
+      for (const beat of beats)
+        for (const note of beat.notes) {
+          if (note.tied || note.fret === 0 || note.sources.length === 0) continue;
+          const near = nearestHand(windows, Math.min(...note.sources.map((k) => notes[k].start)));
+          if (!near) continue;
+          const { low, high } = handFrets(near, capo);
+          checked++;
+          if (note.fret >= low && note.fret <= high) agree++;
+        }
+  return { checked, agree };
+}
+
 export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangement {
   const meter = METERS[options.meter ?? '4/4'];
   const ticks = meterTicks(meter);
@@ -716,11 +749,9 @@ export function arrange(notes: NoteEvent[], options: ArrangeOptions): Arrangemen
     const capo = options.capo ?? 0;
     for (const entry of playable) {
       const time = Math.min(...entry.chord.pitches.flatMap((p) => p.sources.map((k) => notes[k].start)));
-      let near: HandWindow | null = null;
-      for (const w of windows) if (Math.abs(w.time - time) <= HAND_SECONDS && (!near || Math.abs(w.time - time) < Math.abs(near.time - time))) near = w;
+      const near = nearestHand(windows, time);
       if (!near) continue;
-      const low = near.low - capo - 1;
-      const high = near.high - capo + 1;
+      const { low, high } = handFrets(near, capo);
       entry.candidates = entry.candidates.map((c) => {
         const outside = c.notes.reduce((sum, n) => sum + (n.fret === 0 ? 0 : Math.max(0, low - n.fret, n.fret - high)), 0);
         return outside > 0 ? { ...c, cost: c.cost + outside * OUTSIDE_HAND_COST } : c;

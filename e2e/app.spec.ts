@@ -1,7 +1,7 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import ffmpegPath from 'ffmpeg-static';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -76,9 +76,15 @@ test('transcribes a video into a playable, exportable score', async () => {
   await expect(page.locator('#capo')).toContainText('Auto (none)');
   await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 30_000 });
   await expect(page.locator('.at-surface > *').first()).toBeAttached();
-  // The video is watched for the fretting hand by itself; this clip is a plain colour, so none is
-  // found. (Software WebGL is enabled, so the hand is watched even on a machine without a GPU.)
-  await expect(page.getByTestId('hand-vision')).toHaveText('No close-up of the hand in the video', { timeout: 60_000 });
+  // The video is watched for the fretting hand by itself (software WebGL is enabled, so even on a
+  // machine without a GPU). This clip is a plain colour: the watch ends with no hand seen, is kept
+  // with the project, and says nothing — the tab simply comes from the sound.
+  const projectId = page.url().split('/project/')[1];
+  const visionFile = path.join(dir, 'user-data', 'projects', projectId, 'vision.json');
+  await expect.poll(() => existsSync(visionFile), { timeout: 60_000 }).toBe(true);
+  expect(JSON.parse(readFileSync(visionFile, 'utf8'))).toMatchObject({ windows: [] });
+  await expect(page.getByTestId('hand-vision')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Hand from the video' })).toHaveCount(0);
 
   // The original video is served with range requests, so seeking works.
   const seeked = await page.evaluate(async () => {
