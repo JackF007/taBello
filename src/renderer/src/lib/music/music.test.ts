@@ -5,7 +5,7 @@ import type { NoteEvent } from '../../../../shared/ipc';
 import { INSTRUMENTS } from '../../../../shared/instruments';
 import { METERS, type MeterId } from '../../../../shared/meters';
 import { arrange, detectCapo, handAgreement, detectTuning, meterTicks, type ArrangeOptions, type TabBeat } from './arrange';
-import { applyEdit, findNote, locateSource } from './edit';
+import { applyEdit, findNote, locateSource, otherPositions, staffStep } from './edit';
 import { tempoMarks, toAlphaTex, toMidi } from './export';
 import { clickBarPhase, clickGrid, detectTempoChanges } from './tempo';
 import { alphaTexPitch, chordName, detectKey, detectMeter, estimateTempo, harmonyName, makeKey } from './theory';
@@ -618,6 +618,37 @@ describe('applyEdit', () => {
     const found = locateSource(moved, (sources) => sources.includes(0))!;
     expect(findNote(moved, found)).toMatchObject({ pitch: 50 });
     expect(found.beat).toBeGreaterThan(0);
+  });
+
+  it('drags a note onto another string on the tab, keeping its sound', () => {
+    const { placed, location } = at(2);
+    // G3, the open 3rd string, dragged onto the 4th string (D): its 5th fret.
+    const result = applyEdit(notes, placed, location, { type: 'move', semitones: 0, seconds: 0, string: 2 }, context)!;
+    expect(findNote(arrange(result.notes, options), result.location!)).toMatchObject({ string: 2, fret: 5, pitch: 55 });
+    // Not on the high E string: G3 is below it.
+    expect(applyEdit(notes, placed, location, { type: 'move', semitones: 0, seconds: 0, string: 5 }, context)).toBeNull();
+  });
+
+  it('steps along the staff in the key, as a note dragged on it lands', () => {
+    const aMinor = makeKey(9, 'minor');
+    // A4 one line or space up: B4; two: C5; down one: G4 (natural, in A minor).
+    expect(staffStep(69, 1, aMinor)).toBe(71);
+    expect(staffStep(69, 2, aMinor)).toBe(72);
+    expect(staffStep(69, -1, aMinor)).toBe(67);
+    // A whole octave is seven steps.
+    expect(staffStep(69, 7, aMinor)).toBe(81);
+    expect(staffStep(69, -7, aMinor)).toBe(57);
+    // G♯4 sits on the G line: one up is A4, one down F4.
+    expect(staffStep(68, 1, aMinor)).toBe(69);
+    expect(staffStep(68, -1, aMinor)).toBe(65);
+    // In E major, from E4 up two steps: G♯4.
+    expect(staffStep(64, 2, makeKey(4, 'major'))).toBe(68);
+    expect(staffStep(64, 0, makeKey(4, 'major'))).toBe(64);
+  });
+
+  it('lists where else the same note can be played', () => {
+    // G3 (55): open G string, 5th fret of D, 10th of A, 15th of low E.
+    expect(otherPositions(55, 3, context)).toEqual([{ string: 0, fret: 15 }, { string: 1, fret: 10 }, { string: 2, fret: 5 }]);
   });
 
   it('moves the pitch by semitones', () => {
