@@ -71,9 +71,9 @@ test('transcribes a video into a playable, exportable score', async () => {
   await page.waitForURL(/#\/project\//, { timeout: 60_000 });
 
   await expect(page.getByRole('heading', { name: 'arpeggio' })).toBeVisible();
-  await expect(page.locator('label:has-text("Key") + p')).toHaveText('C major');
+  await expect(page.getByTestId('key')).toHaveText('C major');
   // Guitar gets tuning and capo controls; a pure arpeggio needs no capo.
-  await expect(page.locator('#capo')).toContainText('Auto (none)');
+  await expect(page.locator('#capo')).toContainText('No capo');
   await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 30_000 });
   await expect(page.locator('.at-surface > *').first()).toBeAttached();
   // The video is watched for the fretting hand by itself (software WebGL is enabled, so even on a
@@ -97,13 +97,18 @@ test('transcribes a video into a playable, exportable score', async () => {
   expect(seeked).toBeCloseTo(5, 0);
 
   // Tuning and time signature are detected too.
-  await expect(page.locator('#tuning')).toContainText('Auto (Standard');
-  await expect(page.locator('#meter')).toContainText('Auto (4/4)');
+  await expect(page.locator('#tuning')).toContainText('Standard');
+  await expect(page.locator('#meter')).toHaveText('4/4');
   // A steady synthesized arpeggio: no tempo changes to follow.
   await expect(page.getByTestId('tempo-range')).toBeHidden();
-  await page.getByRole('button', { name: 'Techniques', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Techniques', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await page.getByRole('button', { name: 'Techniques', exact: true }).click();
+  // What the score shows is in one menu, which stays open while options are ticked.
+  await page.getByRole('button', { name: 'Show in the score' }).click();
+  const techniques = page.getByRole('menuitemcheckbox', { name: /Techniques/ });
+  await techniques.click();
+  await expect(techniques).toHaveAttribute('aria-checked', 'false');
+  await techniques.click();
+  await expect(techniques).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
 
   // Play along with the original recording: the score follows the video.
   await page.getByRole('radio', { name: 'Original' }).click();
@@ -114,10 +119,10 @@ test('transcribes a video into a playable, exportable score', async () => {
   await expect(page.getByTestId('fretboard')).toHaveAttribute('aria-label', /^Notes on the neck: /);
   await page.getByRole('button', { name: 'Pause' }).click();
   await expect.poll(() => page.evaluate(() => document.querySelector('video')!.paused)).toBe(true);
-  await page.getByRole('radio', { name: 'Transcription' }).click();
 
-  // Edit a note: click the first tab number, raise it a semitone, delete it, undo.
-  await page.getByRole('button', { name: 'Edit notes' }).click();
+  // Notes are always editable: a click on the first tab number selects it, the arrow raises it a
+  // semitone (heard with the transcription's sound), a drag moves it, Delete removes it, Undo.
+  await expect(page.getByTestId('edit-hint')).toBeVisible();
   await page.locator('.at-surface').scrollIntoViewIfNeeded();
   // Tab numbers: digits colored by string (bar numbers are padded, chord diagrams are not colored).
   const stringColors = ['#2EE05A', '#FF3355', '#FFD600', '#2E9BFF', '#FF8A1F', '#B45CFF'].map((c) => `[fill="${c}"]`).join(',');
@@ -125,23 +130,46 @@ test('transcribes a video into a playable, exportable score', async () => {
   const info = page.getByTestId('selected-note-info');
   await expect(info).toHaveText(/^[A-G]♯?\d$/);
   const name = await info.textContent();
-  const fret = Number(await page.locator('#note-fret').inputValue());
+  const fret = Number(await page.getByTestId('note-fret').textContent());
   // The neck shows the selected note alone, where it is played.
   await expect(page.getByTestId('fretboard')).toHaveAttribute('aria-label', new RegExp(`^Notes on the neck: \\w+ string, ${fret ? `fret ${fret}` : 'open'}$`));
+  // Still following the recording, which cannot sound an edit: the transcription takes over.
   await page.keyboard.press('ArrowUp');
+  await expect(page.getByTestId('score-notice')).toContainText('Playing the transcription');
+  await expect(page.getByRole('radio', { name: 'Transcription' })).toHaveAttribute('aria-checked', 'true');
   await expect(info).not.toHaveText(name!);
-  await expect(page.locator('#note-fret')).toHaveValue(String(fret + 1));
+  await expect(page.getByTestId('note-fret')).toHaveText(String(fret + 1));
   // The edited note stays selected in both the notation and the tablature.
   await expect(page.getByTestId('selected-note')).toHaveCount(2);
-  // Drag the note up two semitones: the score shows what it becomes, and it stays selected.
-  const head = (await page.getByTestId('selected-note').first().boundingBox())!;
-  await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2 - 17, { steps: 5 });
-  await expect(page.getByTestId('drag-tip')).toBeVisible();
-  await page.mouse.up();
-  await expect(page.locator('#note-fret')).toHaveValue(String(fret + 3));
+  const heads = async () => {
+    const boxes = await Promise.all((await page.getByTestId('selected-note').all()).map((box) => box.boundingBox()));
+    return boxes.map((b) => ({ x: b!.x + b!.width / 2, y: b!.y + b!.height / 2 })).sort((a, b) => a.y - b.y);
+  };
+  /** Drags from a point by (dx, dy) pixels; returns what the drag said it would do. */
+  const drag = async (from: { x: number; y: number }, dx: number, dy: number) => {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) await page.mouse.move(from.x + (dx * i) / 6, from.y + (dy * i) / 6);
+    await expect(page.getByTestId('drag-tip')).toBeVisible();
+    await expect(page.getByTestId('drag-ghost')).toBeVisible();
+    const said = (await page.getByTestId('drag-tip').innerText()).split('\n').map((line) => line.trim());
+    await page.mouse.up();
+    await expect(page.getByTestId('drag-tip')).toBeHidden();
+    return said;
+  };
+  // On the staff, two lines/spaces up (4 px each): the note lands where it was dropped.
+  const [staffHead] = await heads();
+  const [landed] = await drag(staffHead, 0, -8.1);
+  await expect(info).toHaveText(landed);
+  expect(landed).not.toBe(name);
   await expect(page.getByTestId('selected-note')).toHaveCount(2);
+  // On the tab, one string down: the same note, played on the string below.
+  const [, tabNumber] = await heads();
+  const [same, where] = await drag(tabNumber, 0, 11.7);
+  expect(same).toBe(landed);
+  // (Unless it is already on the lowest string.)
+  if (/string, fret/.test(where ?? '')) await expect(page.locator('[aria-label="Selected note"]')).toContainText(where.split(' · ')[0]);
+  await expect(info).toHaveText(landed);
   const noteCount = async () => Number((await page.getByText(/· \d+ notes ·/).textContent())!.match(/(\d+) notes/)![1]);
   const before = await noteCount();
   await page.getByRole('button', { name: 'Delete note' }).click();
@@ -150,10 +178,11 @@ test('transcribes a video into a playable, exportable score', async () => {
   await expect.poll(noteCount).toBe(before);
   await page.getByRole('button', { name: 'Restore detected notes' }).click();
   await expect(page.getByRole('button', { name: 'Restore detected notes' })).toBeHidden();
-  await page.getByRole('button', { name: 'Edit notes' }).click();
+  await page.keyboard.press('Escape');
 
   // Changing settings re-renders the score; the guitar's notes are written for the ukulele at once.
-  await page.getByRole('button', { name: '2×' }).click();
+  await page.getByRole('button', { name: 'Tempo' }).click();
+  await page.getByRole('menuitem', { name: /^Double/ }).click();
   await page.locator('#instrument').click();
   await page.getByRole('option', { name: 'Ukulele' }).click();
   await expect(page.locator('#tuning')).toContainText('(G C E A)');
@@ -184,7 +213,7 @@ test('writes ukulele tabs with ukulele tunings', async () => {
   await page.waitForURL(/#\/project\//, { timeout: 60_000 });
 
   await expect(page.locator('#instrument')).toContainText('Ukulele');
-  await expect(page.locator('#tuning')).toContainText('Auto (Standard, high G (G C E A))');
+  await expect(page.locator('#tuning')).toContainText('Standard, high G (G C E A)');
   await expect(page.locator('#capo')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 30_000 });
 });
@@ -210,23 +239,26 @@ test('transcribes a bundled sample', async () => {
   await expect(page.getByRole('heading', { name: 'Greensleeves' })).toBeVisible();
   // The menu music gives way to the song.
   await expect(page.locator('html')).toHaveAttribute('data-music', 'stopped');
-  await expect(page.locator('#meter')).toContainText('Auto (3/4');
-  await expect(page.locator('label:has-text("Key") + p')).toHaveText('A minor');
+  await expect(page.locator('#meter')).toContainText('3/4');
+  await expect(page.getByTestId('key')).toHaveText('A minor');
   // The sample plays as the original recording.
   await expect(page.locator('audio')).toBeAttached();
   await expect(page.getByRole('radio', { name: 'Original' })).toBeVisible();
 
   // A capo moves the song up with the same shapes; the recording cannot follow it.
-  await page.getByRole('button', { name: 'Transpose up' }).click();
-  await page.getByRole('button', { name: 'Transpose up' }).click();
+  // Transposing is in the key's menu, which stays open for a few steps.
+  await page.getByRole('button', { name: 'Key and transpose' }).click();
+  await page.getByRole('menuitem', { name: 'Up a semitone' }).click();
+  await page.getByRole('menuitem', { name: 'Up a semitone' }).click();
+  await expect(page.getByRole('menu')).toContainText('2 semitones higher');
+  await page.keyboard.press('Escape');
   await expect(page.getByTestId('transpose')).toHaveText('+2');
-  await expect(page.locator('label:has-text("Key") + p')).toHaveText('B minor');
-  // (A toast is a status too, and stays in the page once closed: look for the capo by its text.)
-  await expect(page.getByRole('status').filter({ hasText: 'Capo on the' })).toContainText('Capo on the 2nd fret');
-  await expect(page.getByTestId('transpose-note')).toContainText('2 semitones higher');
+  await expect(page.getByTestId('key')).toHaveText('B minor');
+  await expect(page.locator('#capo')).toContainText('Capo 2nd fret');
   await expect(page.getByRole('radio', { name: 'Original' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Reset' }).click();
-  await expect(page.getByTestId('transpose')).toHaveText('0');
+  await page.getByRole('button', { name: 'Key and transpose' }).click();
+  await page.getByRole('menuitem', { name: "Back to the recording's key" }).click();
+  await expect(page.getByTestId('transpose')).toHaveCount(0);
 
   // The melody alone: the tab is written again without the bass.
   await page.locator('#part').click();
@@ -269,7 +301,7 @@ test('isolates the bass of the band sample', async () => {
   await page.waitForURL(/#\/project\//, { timeout: 600_000 });
   await expect(page.locator('#instrument')).toContainText('Bass');
   // Isolated: the kick drum no longer looks like notes below a 4-string bass.
-  await expect(page.locator('#tuning')).toContainText('Auto (Standard (E A D G))');
+  await expect(page.locator('#tuning')).toContainText('Standard (E A D G)');
 });
 
 test('offers to download the separation model', async () => {
