@@ -2,6 +2,7 @@
 // detected notes behind a tab note (its sources) and the tab is arranged again.
 import type { NoteEvent } from '../../../../shared/ipc';
 import type { Arrangement, PlacedNote } from './arrange';
+import type { Key } from './theory';
 
 /** Where a note is in the tab: bar and beat indices, and string (in the tuning's physical order). */
 export interface NoteLocation {
@@ -18,8 +19,11 @@ export type NoteEdit =
   /** Another string: with the same fret (a new note, as typed in a tab) or the same pitch (a new fingering). */
   | { type: 'string'; string: number; keep: 'fret' | 'pitch' }
   | { type: 'pitch'; delta: number }
-  /** Dragged in the score: up or down in semitones, and earlier or later in the recording. */
-  | { type: 'move'; semitones: number; seconds: number };
+  /**
+   * Dragged in the score: up or down in semitones, earlier or later in the recording, and onto
+   * another string when given (dragged on the tab).
+   */
+  | { type: 'move'; semitones: number; seconds: number; string?: number };
 
 export interface EditContext {
   /** Open strings without capo, in the tuning's physical order. */
@@ -76,8 +80,9 @@ export function applyEdit(
     const delta = edit.type === 'pitch' ? edit.delta : edit.semitones;
     if (edit.type === 'move') shift = edit.seconds;
     pitch = placed.pitch + delta;
+    if (edit.type === 'move' && edit.string !== undefined) string = edit.string;
     // Stay on the same string when possible; otherwise let the fingering pick one.
-    if (!playable(placed.string, pitch)) string = undefined;
+    else if (!playable(placed.string, pitch)) string = undefined;
   }
   if (pitch < 0 || pitch > 127) return null;
   if (string !== undefined && !playable(string, pitch)) return null;
@@ -87,4 +92,32 @@ export function applyEdit(
     notes: notes.map((note, i) => (sources.has(i) ? { ...note, pitch, string, start: Math.max(0, note.start + shift) } : note)),
     location: string === undefined || shift !== 0 ? null : { ...location, string },
   };
+}
+
+const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] };
+
+/**
+ * The note `steps` lines or spaces of the staff above (or below, when negative) `pitch`, in the
+ * key: what a note dragged that far on the staff becomes. A note outside the key (G♯ in A minor)
+ * sits on the line of the scale note below it (G), and moves from there.
+ */
+export function staffStep(pitch: number, steps: number, key: Pick<Key, 'tonic' | 'mode'>): number {
+  const scale = SCALES[key.mode];
+  const degree = (p: number) => scale.indexOf((((p - key.tonic) % 12) + 12) % 12);
+  let base = pitch;
+  while (degree(base) < 0) base--;
+  let index = degree(base);
+  let octave = Math.floor((base - key.tonic) / 12);
+  index += steps;
+  octave += Math.floor(index / 7);
+  index = ((index % 7) + 7) % 7;
+  return key.tonic + octave * 12 + scale[index];
+}
+
+/** Where else on the neck the same pitch can be played: string and fret (above the capo). */
+export function otherPositions(pitch: number, string: number, context: EditContext): { string: number; fret: number }[] {
+  return context.tuning.flatMap((open, s) => {
+    const fret = pitch - open - context.capo;
+    return s !== string && fret >= 0 && fret <= context.frets - context.capo ? [{ string: s, fret }] : [];
+  });
 }

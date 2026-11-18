@@ -75,14 +75,16 @@ check for new versions, which you can turn off.)
 - **See it on the neck**: under the player, a fretboard drawn to scale lights each note where it is
   played, in its string's color, as it sounds (*Neck* hides it); while editing it shows the selected note.
 - **Loop and slow down**: select bars to loop a passage, and lower the speed without changing the pitch.
-- **Transpose**, to suit a voice or a capo, a semitone at a time. With *Same shapes (capo)* the tab and
+- **Transpose** (from the key's menu), to suit a voice or a capo, a semitone at a time. With *Same shapes* the tab and
   chord shapes stay the same and the capo moves (capo on the 2nd fret: the song sounds a tone higher);
   without it the part is refingered in the new key.
 
 ### Edit, export, keep
 
-- **Edit the tab**: click a note to change its fret, string or pitch, or delete it; undo, or restore
-  the detected notes at any time.
+- **Edit by taking the notes**: click a note on the staff or the tab to hear it, and drag it where it
+  belongs — on the staff it lands on the line or space you drop it on, on the tab it moves to another
+  string (the same note, played elsewhere), sideways it moves in time. A lens shows what it becomes as
+  you drag, and you hear the new note. Undo, or restore the detected notes, at any time.
 - **Export** to Guitar Pro 7 (`.gp` — opens in Guitar Pro, MuseScore, TuxGuitar), MIDI (`.mid`) and
   alphaTex.
 - **A local library** of all your transcriptions, settings and edits included.
@@ -132,26 +134,28 @@ You can also run TaBello from source (see [Development](#development)).
 2. **Drop a file** or click *Choose file* — or click **Try** on one of the sample tracks. Most audio and
    video formats work (MP3, WAV, FLAC, M4A, MP4, MOV, MKV…), up to 15 minutes. Transcription takes a
    few seconds per minute of audio.
-3. **Check the result** on the project page. Its settings come in three groups:
-   - **What to write**: instrument, part (everything, melody / lead or accompaniment), tuning and capo,
-     detected (*Auto*); pick another value if a guess is wrong. Guitar and ukulele play the same part,
-     so switching between them rewrites the notes at once; the bass plays its own, so choosing it
-     listens to the recording again for the bass (isolated if the tab was) and opens it as a new
-     project, next to the first one;
-   - **Timing and key**: time signature, tempo (if it looks off by a factor of two, use **½×** or
-     **2×**), the key, and **Transpose**;
-   - **In the score**: tick or untick *Chords*, *Techniques* and *Tempo changes*. A detected capo or
-     metronome is shown here too.
+3. **Check the result** on the project page. One row at the top says what was written, as chips:
+   instrument, part (everything, melody / lead or accompaniment), tuning, capo, time signature, tempo
+   and key. Those marked ✦ were detected; click one only if a guess is wrong.
+   - Guitar and ukulele play the same part, so switching between them rewrites the notes at once; the
+     bass plays its own, so choosing it listens to the recording again for the bass (isolated if the
+     tab was) and opens it as a new project, next to the first one;
+   - the **tempo** chip halves or doubles a tempo that is off by a factor of two, takes one you type,
+     and follows tempo changes or not; the **key** chip transposes;
+   - **Show** ticks chord names and playing techniques in the score on or off.
 
    Then:
    - press **Play** to hear the transcription, or switch the player to **Original** to hear the
      recording while the cursor follows the score;
    - drag over bars to select them and press **Loop** to practice a passage; lower the **Speed** to
      slow it down (the recording keeps its pitch);
-   - turn on **Edit notes** and click a note to fix it (you hear it as it changes): **drag it** up or
-     down to change the note, left or right to move it in time; or type a fret, pick a string (the same
-     fret on another string), use ↑/↓ for semitones, Alt+↑/↓ for the same note on another string,
-     Delete to remove it, Ctrl+Z to undo. *Restore detected notes* brings back the original transcription.
+   - **fix a note by taking it**: click it to hear it (the cursor moves there too), then **drag it** —
+     on the staff up or down to the line or space it should be on, on the tab onto another string,
+     sideways to move it in time. The bar above the score shows the selected note: − and + move it by a
+     semitone, *Also at* lists where else on the neck the same note is played. Keys: ↑/↓ semitones,
+     Alt+↑/↓ another string, digits type a fret, Delete removes it, Esc deselects, Ctrl+Z undoes. While
+     you follow the original recording, an edit switches the player to the transcription, so you hear
+     it. *Restore detected notes* brings back the original transcription.
 4. **Export** to Guitar Pro or MIDI to keep editing in your favorite program (the menu says what each
    format is for).
 
@@ -193,7 +197,8 @@ Automatic transcription is a starting point, not a finished tab. Accuracy depend
   after exporting to Guitar Pro, MuseScore or TuxGuitar.
 - Very fast passages (16th notes above ~150 BPM) and dense chords can lose notes; overtones can
   occasionally add an octave note. Short notes on a bass's low E string (E1) are often missed.
-- A continuous stream of 16th notes can be heard as 8th notes at twice the tempo; press **½×**.
+- A continuous stream of 16th notes can be heard as 8th notes at twice the tempo: choose *Half* in the
+  tempo chip.
 - A transposed part plays with TaBello's synthesizer only: the original recording keeps its key.
 - The second voice is written for guitar parts with a held bass; bass, ukulele and strummed parts use
   one voice. Chord names cover triads, sevenths, sus, add9, madd9, 6 and power chords, with slash

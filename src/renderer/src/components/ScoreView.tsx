@@ -17,19 +17,28 @@ interface ScoreViewProps {
   media?: HTMLMediaElement | null;
   /** Time in the recording, in seconds, where bar 1 starts. */
   mediaOffset?: number;
-  /** When set, clicking a note selects it instead of moving the cursor. */
-  onNoteClick?: (location: NoteLocation) => void;
+  /**
+   * When set, notes can be picked: a click on one selects it (and moves the cursor there), a click
+   * elsewhere passes null.
+   */
+  onNoteClick?: (location: NoteLocation | null) => void;
   /** Note to highlight. */
   selected?: NoteLocation | null;
   /**
-   * When set, a note can be dragged: up or down (semitones), left or right (in bars, a fraction of
-   * the width of its bar). Called on release.
+   * When set, a note can be dragged: on the staff up or down by lines and spaces, on the tab onto
+   * another string, and left or right in time (in bars, a fraction of the width of its bar). Called
+   * on release.
    */
   onNoteDrag?: (location: NoteLocation, drag: NoteDrag) => void;
   /** What a drag in progress would do, shown next to the pointer. */
   dragLabel?: (location: NoteLocation, drag: NoteDrag) => string;
   /** Changing this plays the selected note (after an edit, to hear it). */
   previewKey?: number;
+  /**
+   * Changing this means a note was edited: the transcription is played from then on (the original
+   * recording cannot sound an edit).
+   */
+  editKey?: number;
   /** The instrument's neck, to show where the notes being played are: open-string names, lowest first. */
   neck?: { strings: string[]; capo: number; frets: number };
   /** Extra controls for the transport bar. */
@@ -41,13 +50,23 @@ interface ScoreViewProps {
 type Source = 'synth' | 'original';
 
 export interface NoteDrag {
-  semitones: number;
+  /** Where the note was taken: its head on the staff, or its number on the tab. */
+  on: 'staff' | 'tab';
+  /** Lines and spaces up on the staff, or strings up on the tab (negative: down). */
+  steps: number;
   bars: number;
 }
 
-/** Pixels of vertical drag per semitone, and before a press becomes a drag. */
-const PX_PER_SEMITONE = 8;
+/** Pixels before a press becomes a drag. */
 const DRAG_THRESHOLD = 5;
+/** The score's scale, and alphaTab's staff space at scale 1 (its music font size, 36, over 4). */
+const SCALE = 0.9;
+const STAFF_SPACE = 9;
+/** A line or a space of the staff, and the distance between two strings of the tab, in pixels. */
+const STAFF_STEP = (STAFF_SPACE * SCALE) / 2;
+const TAB_LINE = Math.floor(STAFF_SPACE * 1.5) * SCALE;
+/** How far from a note head a press still takes the note. */
+const HIT_SLOP = 6;
 
 const SPEEDS = ['0.5', '0.75', '1'];
 /** Pixels of the score kept in sight above the line being played. */
@@ -88,7 +107,7 @@ interface Box {
  * Renders notation and tablature with alphaTab and plays it back, either with the bundled soundfont
  * or by following the original recording (cursor in sync, same speed and loop controls).
  */
-const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected = null, onNoteDrag, dragLabel, previewKey, neck, controls, toolbar }: ScoreViewProps) => {
+const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected = null, onNoteDrag, dragLabel, previewKey, editKey, neck, controls, toolbar }: ScoreViewProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<AlphaTabApi | null>(null);
@@ -106,7 +125,14 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
   const [speed, setSpeed] = useState('1');
   const [error, setError] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<Box[]>([]);
+  /** The selected note's moment, as a band across the staves (where a dragged note leaves from). */
+  const [column, setColumn] = useState<Box | null>(null);
+  /** What the dragged note becomes, shown in a lens around it (centre, in the score's pixels). */
   const [dragTip, setDragTip] = useState<{ x: number; y: number; text: string } | null>(null);
+  /** Where a dragged note would land, drawn over the score, and its moment when moved in time. */
+  const [ghost, setGhost] = useState<Box | null>(null);
+  const [target, setTarget] = useState<Box | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Latest values for alphaTab callbacks, which are registered once per player.
   const texRef = useRef(tex);
@@ -117,8 +143,21 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
   noteClickRef.current = onNoteClick;
   const dragRef = useRef({ onNoteDrag, dragLabel });
   dragRef.current = { onNoteDrag, dragLabel };
-  /** Where the pointer went down, and the note pressed there (with its bar's width), if any. */
-  const pressRef = useRef<{ x: number; y: number; note?: { location: NoteLocation; barWidth: number }; dragging?: boolean } | null>(null);
+  /** The note pressed: where, on which staff, its head, its beat and its bar's width. */
+  const pressRef = useRef<{
+    x: number;
+    y: number;
+    location: NoteLocation;
+    on: 'staff' | 'tab';
+    head: Box;
+    beat: model.Beat;
+    barWidth: number;
+    /** The staves of the note's line: the height of the band showing where it goes. */
+    system: { y: number; h: number };
+    dragging?: boolean;
+  } | null>(null);
+  /** The selected note is to be played once the transcription's sounds are ready. */
+  const pendingPreviewRef = useRef(false);
   const loadedTexRef = useRef<string | null>(null);
   const selectedRef = useRef(selected);
   const neckRef = useRef(neck);
@@ -136,10 +175,28 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     // edit shows in both.
     const bounds = note ? (api?.boundsLookup?.findBeats(beat!)?.flatMap((b) => b.notes ?? []).filter((n) => n.note === note) ?? []) : [];
     setHighlights(bounds.map(({ noteHeadBounds: box }) => ({ x: box.x, y: box.y, w: box.w, h: box.h })));
+    const first = bounds[0];
+    if (first) {
+      const system = first.beatBounds.barBounds.masterBarBounds.visualBounds;
+      const beatBox = first.beatBounds.visualBounds;
+      setColumn({ x: beatBox.x - 6, y: system.y - 6, w: beatBox.w + 12, h: system.h + 12 });
+    } else setColumn(null);
     setChosen(note ? { string: note.string - 1, fret: note.fret + (neckRef.current?.capo ?? 0), selected: true } : null);
   }, []);
 
   useEffect(updateHighlight, [selected, updateHighlight]);
+
+  /** Plays the selected note with the transcription's sound. */
+  const lastPreviewRef = useRef(0);
+  const playSelected = useCallback((api: AlphaTabApi) => {
+    // One sound for one change, even when both an edit and a new selection ask for it.
+    if (performance.now() - lastPreviewRef.current < 300) return;
+    lastPreviewRef.current = performance.now();
+    const location = selectedRef.current;
+    const beat = location && api.score?.tracks[0]?.staves[0]?.bars[location.bar]?.voices[location.voice ?? 0]?.beats[location.beat];
+    const note = beat?.notes.find((n) => n.string - 1 === location!.string);
+    if (note) api.playNote(note);
+  }, []);
 
   // One alphaTab instance per sound source: switching player modes means a new player.
   useEffect(() => {
@@ -155,7 +212,7 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
       notation: { elements: new Map([[NotationElement.EffectDynamics, false]]) },
       display: {
         layoutMode: LayoutMode.Page,
-        scale: 0.9,
+        scale: SCALE,
         resources: {
           mainGlyphColor: '#eeeef8',
           secondaryGlyphColor: '#a3a3c2',
@@ -192,6 +249,10 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
       api.isLooping = looping;
       api.playbackSpeed = Number(rate);
       setIsPlayerReady(true);
+      if (pendingPreviewRef.current && !original) {
+        pendingPreviewRef.current = false;
+        playSelected(api);
+      }
     });
     api.playerStateChanged.on((e) => {
       setIsPlaying(e.state === synth.PlayerState.Playing);
@@ -208,12 +269,6 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
       );
     });
     api.playbackRangeChanged.on((e) => setHasRange(e.playbackRange !== null));
-    api.noteMouseDown.on((note) => {
-      const location = { bar: note.beat.voice.bar.index, beat: note.beat.index, string: note.string - 1, voice: note.beat.voice.index };
-      noteClickRef.current?.(location);
-      const barWidth = api.boundsLookup?.findBeat(note.beat)?.barBounds.masterBarBounds.visualBounds.w ?? 0;
-      if (pressRef.current && barWidth > 0) pressRef.current.note = { location, barWidth };
-    });
     api.error.on((e) => {
       console.error('alphaTab error', e);
       setError(e.message);
@@ -262,7 +317,7 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
       api.destroy();
       apiRef.current = null;
     };
-  }, [source, media, updateHighlight]);
+  }, [source, media, updateHighlight, playSelected]);
 
   useEffect(() => {
     const api = apiRef.current;
@@ -274,66 +329,136 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
     api.tex(tex);
   }, [tex]);
 
-  // While notes are edited, a drag moves a note instead of selecting bars to loop.
-  const editing = !!onNoteClick;
-  const draggable = !!onNoteDrag;
-  useEffect(() => {
-    const api = apiRef.current;
-    if (api) api.settings.player.enableUserInteraction = !editing;
-  }, [editing, source]);
+  const editable = !!onNoteClick;
 
-  // Plays the selected note, to hear an edit.
+  // Plays the selected note, to hear it or an edit (with the transcription's sound only: the
+  // original recording cannot play one note).
   useEffect(() => {
     const api = apiRef.current;
-    const location = selectedRef.current;
-    if (!previewKey || !api || !location || source !== 'synth' || !isPlayerReady) return;
-    const beat = api.score?.tracks[0]?.staves[0]?.bars[location.bar]?.voices[location.voice ?? 0]?.beats[location.beat];
-    const note = beat?.notes.find((n) => n.string - 1 === location.string);
-    if (note) api.playNote(note);
+    if (!previewKey || !api || !selectedRef.current || source !== 'synth') return;
+    if (isPlayerReady) playSelected(api);
+    else pendingPreviewRef.current = true;
     // Only a new key plays: not a change of selection or player.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewKey]);
 
-  // Dragging a note: the pointer is followed on the whole window, so the drag can leave the score.
+  // An edit is heard: the original recording cannot play it, so the transcription takes over.
   useEffect(() => {
-    if (!draggable) return;
+    if (!editKey || source !== 'original') return;
+    pendingPreviewRef.current = true;
+    setSource('synth');
+    setNotice('Playing the transcription now, so you hear your changes.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editKey]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  // Taking a note: a press on a note head (staff) or number (tab) selects it, and dragging it moves
+  // it; a press anywhere else is alphaTab's (moving the cursor, selecting bars to loop). The
+  // pointer is followed on the whole window, so the drag can leave the score.
+  useEffect(() => {
+    if (!editable) return;
     const container = containerRef.current;
+    if (!container) return;
+    /** The note under a point of the score, with the staff it was taken on. */
+    const noteAt = (x: number, y: number) => {
+      const lookup = apiRef.current?.boundsLookup;
+      const beat = lookup?.getBeatAtPos(x, y);
+      if (!lookup || !beat) return null;
+      const heads = (lookup.findBeats(beat) ?? []).flatMap((b) => b.notes ?? []);
+      const near = (n: (typeof heads)[number]) => {
+        const box = n.noteHeadBounds;
+        return Math.max(box.x - x, x - box.x - box.w, 0) + Math.max(box.y - y, y - box.y - box.h, 0);
+      };
+      const hit = heads.filter((n) => near(n) <= HIT_SLOP).sort((a, b) => near(a) - near(b))[0];
+      if (!hit) return null;
+      // The same note on both staves: the notation's head is above the tab's number.
+      const same = heads.filter((n) => n.note === hit.note).sort((a, b) => a.noteHeadBounds.y - b.noteHeadBounds.y);
+      const on: 'staff' | 'tab' = same.length > 1 && same.indexOf(hit) > 0 ? 'tab' : 'staff';
+      const { x: hx, y: hy, w, h } = hit.noteHeadBounds;
+      const bar = hit.beatBounds.barBounds.masterBarBounds.visualBounds;
+      return { note: hit.note, beat: hit.note.beat, on, head: { x: hx, y: hy, w, h }, barWidth: bar.w, system: { y: bar.y, h: bar.h } };
+    };
+    const local = (e: PointerEvent) => {
+      const rect = container.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
     const measure = (e: PointerEvent): NoteDrag | null => {
       const press = pressRef.current;
-      if (!press?.note) return null;
+      if (!press) return null;
       const dx = e.clientX - press.x;
       const dy = e.clientY - press.y;
       if (!press.dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) return null;
       press.dragging = true;
-      return { semitones: -Math.round(dy / PX_PER_SEMITONE), bars: dx / press.note.barWidth };
+      const steps = -Math.round(dy / (press.on === 'staff' ? STAFF_STEP : TAB_LINE));
+      return { on: press.on, steps, bars: dx / press.barWidth };
     };
     const onDown = (e: PointerEvent) => {
-      if (e.button === 0) pressRef.current = { x: e.clientX, y: e.clientY };
+      if (e.button !== 0) return;
+      const { x, y } = local(e);
+      const found = noteAt(x, y);
+      if (!found) {
+        noteClickRef.current?.(null);
+        return;
+      }
+      // The press is the note's: alphaTab does not start selecting bars from it.
+      const api = apiRef.current!;
+      api.settings.player.enableUserInteraction = false;
+      const { note, beat, on, head, barWidth, system } = found;
+      const location = { bar: beat.voice.bar.index, beat: beat.index, string: note.string - 1, voice: beat.voice.index };
+      pressRef.current = { x: e.clientX, y: e.clientY, location, on, head, beat, barWidth: barWidth || 1, system };
+      noteClickRef.current?.(location);
     };
     const onMove = (e: PointerEvent) => {
-      const drag = measure(e);
       const press = pressRef.current;
-      if (!drag || !press?.note) return;
-      const text = dragRef.current.dragLabel?.(press.note.location, drag) ?? '';
-      setDragTip({ x: e.clientX, y: e.clientY, text });
+      if (!press) {
+        // A hand over a note: it can be taken.
+        if (e.target instanceof Node && container.contains(e.target)) {
+          const { x, y } = local(e);
+          container.style.cursor = noteAt(x, y) ? 'grab' : '';
+        }
+        return;
+      }
+      const drag = measure(e);
+      if (!drag) return;
+      container.style.cursor = 'grabbing';
+      const lift = drag.steps * (press.on === 'staff' ? STAFF_STEP : TAB_LINE);
+      const x = press.head.x + (e.clientX - press.x);
+      setGhost({ ...press.head, x, y: press.head.y - lift });
+      setDragTip({ x: x + press.head.w / 2, y: press.head.y - lift + press.head.h / 2, text: dragRef.current.dragLabel?.(press.location, drag) ?? '' });
+      setTarget(Math.abs(e.clientX - press.x) > press.head.w ? { x: x - 6, y: press.system.y - 6, w: press.head.w + 12, h: press.system.h + 12 } : null);
     };
     const onUp = (e: PointerEvent) => {
-      const drag = measure(e);
       const press = pressRef.current;
+      if (!press) return;
+      const drag = measure(e);
       pressRef.current = null;
       setDragTip(null);
-      if (drag && press?.note) dragRef.current.onNoteDrag?.(press.note.location, drag);
+      setGhost(null);
+      setTarget(null);
+      container.style.cursor = '';
+      const api = apiRef.current;
+      // After alphaTab has seen the release, presses elsewhere are its own again.
+      window.setTimeout(() => {
+        if (api) api.settings.player.enableUserInteraction = true;
+      });
+      if (drag) dragRef.current.onNoteDrag?.(press.location, drag);
+      // A click on a note also moves the cursor there (and the recording, when following it).
+      else if (api) api.tickPosition = press.beat.absolutePlaybackStart;
     };
-    // Capture: the press is known before alphaTab reports the note under it.
-    container?.addEventListener('pointerdown', onDown, true);
+    // Capture: the press is known before alphaTab handles it.
+    container.addEventListener('pointerdown', onDown, true);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     return () => {
-      container?.removeEventListener('pointerdown', onDown, true);
+      container.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [draggable]);
+  }, [editable]);
 
   // Space bar plays and pauses, unless typing or using a control.
   useEffect(() => {
@@ -470,6 +595,11 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
       </div>
 
       {toolbar && <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2">{toolbar}</div>}
+      {notice && (
+        <p role="status" className="border-b px-4 py-2 text-sm text-gh-yellow" data-testid="score-notice">
+          {notice}
+        </p>
+      )}
 
       {neck && showNeck && (
         <div className="border-b bg-[#0d0c1b] px-4 py-2">
@@ -497,8 +627,19 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
           </div>
         )}
         <div className="relative">
-          {/* While editing, a drag moves a note: no text selection. */}
-          <div ref={containerRef} className={`min-h-[300px] ${onNoteClick ? 'cursor-pointer select-none' : ''}`} />
+          {/* Notes can be dragged: no text selection. */}
+          {column && selected && (
+            <div aria-hidden className="pointer-events-none absolute rounded-xl bg-gh-yellow/[0.07]" style={{ left: column.x, top: column.y, width: column.w, height: column.h }} />
+          )}
+          {target && (
+            <div
+              aria-hidden
+              data-testid="drag-target"
+              className="pointer-events-none absolute rounded-xl border-2 border-dashed border-gh-yellow/50"
+              style={{ left: target.x, top: target.y, width: target.w, height: target.h }}
+            />
+          )}
+          <div ref={containerRef} className={`min-h-[300px] ${editable ? 'select-none' : ''}`} />
           {highlights.map((box, i) => (
             <div
               key={i}
@@ -508,18 +649,35 @@ const ScoreView = ({ tex, media = null, mediaOffset = 0, onNoteClick, selected =
               style={{ left: box.x - 4, top: box.y - 3, width: box.w + 8, height: box.h + 6 }}
             />
           ))}
+          {dragTip && (
+            // A lens on the dragged note, with what it becomes in large letters above it.
+            <div aria-hidden className="pointer-events-none absolute z-20" style={{ left: dragTip.x, top: dragTip.y }}>
+              <div className="absolute -translate-x-1/2 -translate-y-1/2 h-16 w-16 rounded-full border-2 border-gh-yellow/80 bg-[#0d0c1b]/40 shadow-[0_0_24px_4px_rgba(255,214,0,0.35)] backdrop-blur-[1px]" />
+            </div>
+          )}
+          {dragTip && (
+            <div
+              role="status"
+              data-testid="drag-tip"
+              className="pointer-events-none absolute z-30 -translate-x-1/2 whitespace-nowrap text-center"
+              style={{ left: dragTip.x, top: dragTip.y - 88 }}
+            >
+              <div className="font-display text-3xl leading-none text-gh-yellow drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">{dragTip.text.split(' · ')[0]}</div>
+              {dragTip.text.includes(' · ') && (
+                <div className="mt-1 rounded-full bg-card/90 px-2 py-0.5 text-xs font-semibold text-foreground">{dragTip.text.split(' · ').slice(1).join(' · ')}</div>
+              )}
+            </div>
+          )}
+          {ghost && (
+            <div
+              aria-hidden
+              data-testid="drag-ghost"
+              className="pointer-events-none absolute rounded-full border-2 border-dashed border-gh-yellow bg-gh-yellow/30 shadow-[0_0_14px_2px_rgba(255,214,0,0.5)]"
+              style={{ left: ghost.x - 3, top: ghost.y - 2, width: ghost.w + 6, height: ghost.h + 4 }}
+            />
+          )}
         </div>
       </div>
-      {dragTip && (
-        <div
-          role="status"
-          data-testid="drag-tip"
-          className="pointer-events-none fixed z-50 rounded-md border border-gh-yellow bg-card px-2 py-1 text-xs font-semibold text-gh-yellow shadow-lg"
-          style={{ left: dragTip.x + 14, top: dragTip.y - 30 }}
-        >
-          {dragTip.text}
-        </div>
-      )}
     </div>
   );
 };
